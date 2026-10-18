@@ -1,0 +1,17 @@
+# ===== 潍坊市二手房房价预测系统 · 后端依赖 =====
+Django==4.2.11
+PyMySQL==1.1.0
+openpyxl==3.1.2
+
+# ===== 本地启用「随机森林预测」(engine=spark) 时额外需要 =====
+# 1) pyspark 版本需与训练端一致；Python 需 3.7~3.11（3.12+ 与 3.3.x 不兼容）
+# 2) numpy 需 < 2（pyspark 3.3.x 不兼容 numpy 2.x 的 API 变更）
+# pyspark==3.3.1
+# numpy<2
+
+# ===== Windows 本地加载 Spark 模型所需的本地库 =====
+# 需在 spark_jobs/tools/hadoop/bin/ 下放置：
+#   winutils.exe  —— Hadoop Shell 定位（predict_service 自动设置 HADOOP_HOME）
+#   hadoop.dll    —— Hadoop 本地库（predict_service 用 ctypes 预加载）
+#   msvcr120.dll  —— hadoop.dll 依赖的 VC++2013 运行库
+# 若缺失，predict.py 会自动降级为统计估算（engine=statistic），不影响系统可用。

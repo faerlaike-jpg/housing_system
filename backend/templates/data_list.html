@@ -1,0 +1,817 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}数据列表 · 潍坊市二手房房价预测系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 筛选区底部按钮行 */
+    .filter-actions { gap: 10px; }
+    /* 双滑块区间：上下两行叠放，节省横向空间 */
+    .range-stack { display: flex; flex-direction: column; gap: 6px; }
+    .range-track { position: relative; }
+    /* 表格操作栏 */
+    .table-toolbar {
+        display: flex; flex-wrap: wrap; align-items: center;
+        justify-content: space-between; gap: 12px; margin-bottom: 4px;
+    }
+    .table-toolbar .toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    /* 已选数量徽标 */
+    .sel-hint { font-size: 13px; color: var(--text-3); }
+    .sel-hint .sel-num { color: var(--primary); font-weight: 600; }
+    /* 标题列最大宽度，超长省略 */
+    .col-title { min-width: 180px; max-width: 280px; }
+    .col-title .t-ellipsis {
+        display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    /* 标题可点击进入详情页 */
+    .col-title .title-link:hover { color: var(--primary); text-decoration: underline; }
+    /* 行复选框垂直居中 */
+    .table-brand .form-check-input { cursor: pointer; }
+    /* 分页信息 */
+    .page-info { font-size: 13px; color: var(--text-3); }
+    @media (max-width: 575.98px) {
+        .table-toolbar .toolbar-actions { width: 100%; }
+        .table-toolbar .toolbar-actions .btn { flex: 1 1 auto; }
+    }
+    /* 收藏星标按钮 */
+    .fav-btn {
+        border: none; background: transparent; padding: 2px 4px;
+        cursor: pointer; font-size: 16px; line-height: 1;
+        color: var(--text-3); transition: var(--transition);
+    }
+    .fav-btn:hover { color: var(--warning); transform: scale(1.12); }
+    .fav-btn.is-fav { color: var(--warning); }
+    .fav-btn:disabled { opacity: 0.6; cursor: default; transform: none; }
+    /* 已保存筛选胶囊（复用 status-tag，仅补充交互态） */
+    .saved-chip { cursor: pointer; gap: 6px; }
+    .saved-chip:hover { background: #D6E4FF; }
+    .saved-chip .saved-chip-del { font-size: 13px; opacity: 0.7; cursor: pointer; }
+    .saved-chip .saved-chip-del:hover { opacity: 1; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- ============================ 顶部筛选卡片 ============================ -->
+<div class="app-card mb-3 fade-up">
+    <div class="card-title-line"><i class="bi bi-funnel"></i>高级筛选</div>
+
+    <div class="row g-3">
+        <!-- 区域（由 map_data 动态生成） -->
+        <div class="col-12 col-md-6 col-lg-3">
+            <label class="form-label" for="fDistrict">区域</label>
+            <select class="form-select" id="fDistrict">
+                <option value="">全部区域</option>
+            </select>
+        </div>
+
+        <!-- 户型（室数） -->
+        <div class="col-12 col-md-6 col-lg-3">
+            <label class="form-label" for="fRoomNum">户型（室）</label>
+            <select class="form-select" id="fRoomNum">
+                <option value="">不限</option>
+                <option value="1">1 室</option>
+                <option value="2">2 室</option>
+                <option value="3">3 室</option>
+                <option value="4">4 室</option>
+                <option value="5">5 室及以上</option>
+            </select>
+        </div>
+
+        <!-- 装修 -->
+        <div class="col-12 col-md-6 col-lg-3">
+            <label class="form-label" for="fDecoration">装修</label>
+            <select class="form-select" id="fDecoration">
+                <option value="">不限</option>
+                <option value="精装">精装</option>
+                <option value="简装">简装</option>
+                <option value="毛坯">毛坯</option>
+                <option value="其他">其他</option>
+            </select>
+        </div>
+
+        <!-- 电梯 -->
+        <div class="col-12 col-md-6 col-lg-3">
+            <label class="form-label" for="fElevator">电梯</label>
+            <select class="form-select" id="fElevator">
+                <option value="">不限</option>
+                <option value="有">有</option>
+                <option value="无">无</option>
+            </select>
+        </div>
+
+        <!-- 价格区间（双滑块） -->
+        <div class="col-12 col-lg-6">
+            <label class="form-label">价格区间（万）：<span id="priceLabel" class="fw-semibold text-primary">不限</span></label>
+            <div class="range-stack">
+                <input type="range" class="range-brand" id="minPrice" min="0" max="1000" step="5" value="0">
+                <input type="range" class="range-brand" id="maxPrice" min="0" max="1000" step="5" value="1000">
+            </div>
+            <div class="d-flex justify-content-between text-muted-2 mt-1" style="font-size:12px;">
+                <span>最低：<span id="minPriceVal">不限</span></span>
+                <span>最高：<span id="maxPriceVal">不限</span></span>
+            </div>
+        </div>
+
+        <!-- 面积区间（数字输入） -->
+        <div class="col-12 col-lg-6">
+            <label class="form-label">面积区间（㎡）</label>
+            <div class="d-flex align-items-center gap-2">
+                <input type="number" class="form-control" id="minSquare" min="0" step="1" placeholder="最小面积">
+                <span class="text-muted-2">—</span>
+                <input type="number" class="form-control" id="maxSquare" min="0" step="1" placeholder="最大面积">
+            </div>
+        </div>
+    </div>
+
+    <div class="d-flex filter-actions mt-3">
+        <button class="btn btn-brand" id="btnSearch"><i class="bi bi-search me-1"></i>查询</button>
+        <button class="btn btn-outline-soft" id="btnReset"><i class="bi bi-arrow-counterclockwise me-1"></i>重置</button>
+        <button class="btn btn-outline-soft" id="btnSaveFilter"><i class="bi bi-bookmark-plus me-1"></i>保存当前筛选</button>
+    </div>
+</div>
+
+<!-- ============================ 常用筛选（保存的条件） ============================ -->
+<div class="app-card mb-3 fade-up d-none" id="savedFiltersRow">
+    <div class="card-title-line mb-2"><i class="bi bi-bookmarks"></i>常用筛选</div>
+    <div class="d-flex flex-wrap gap-2" id="savedFilters"></div>
+</div>
+
+<!-- ============================ 主体表格卡片 ============================ -->
+<div class="app-card fade-up" id="tableCard">
+    <!-- 操作栏 -->
+    <div class="table-toolbar">
+        <div>
+            <span class="card-title-line mb-0 d-inline-flex"><i class="bi bi-table"></i>房源数据列表</span>
+            <div class="sel-hint">已选 <span class="sel-num" id="selCount">0</span> 套（选择 2 - 4 套可对比）</div>
+        </div>
+        <div class="toolbar-actions">
+            <button class="btn btn-soft" id="btnCompare" disabled>
+                <i class="bi bi-columns-gap me-1"></i>添加到对比
+            </button>
+            <button class="btn btn-outline-soft" id="btnExportCsv">
+                <i class="bi bi-filetype-csv me-1"></i>导出 CSV
+            </button>
+            <button class="btn btn-outline-soft" id="btnExportXlsx">
+                <i class="bi bi-file-earmark-excel me-1"></i>导出 Excel
+            </button>
+        </div>
+    </div>
+
+    <!-- 表格（移动端横向滚动） -->
+    <div class="table-responsive" id="tableWrap">
+        <table class="table-brand">
+            <thead>
+                <tr>
+                    <th style="width:40px;">
+                        <input class="form-check-input" type="checkbox" id="checkAll" title="全选当前页">
+                    </th>
+                    <th>ID</th>
+                    <th>标题</th>
+                    <th>区域</th>
+                    <th>小区</th>
+                    <th>户型</th>
+                    <th>面积</th>
+                    <th>楼层</th>
+                    <th>总价</th>
+                    <th>单价</th>
+                    <th>性价比</th>
+                    <th>装修</th>
+                    <th>电梯</th>
+                    <th style="width:60px;">收藏</th>
+                </tr>
+            </thead>
+            <tbody id="houseTbody"></tbody>
+        </table>
+    </div>
+    <!-- 空状态 / 错误占位 -->
+    <div id="emptyBox"></div>
+
+    <!-- 分页 -->
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
+        <div class="page-info" id="pageInfo">共 0 条 / 第 1 页</div>
+        <nav aria-label="分页">
+            <ul class="pagination mb-0" id="pagination"></ul>
+        </nav>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    "use strict";
+
+    var PRICE_MAX = 1000;           // 价格滑块上限（万）
+    var PAGE_SIZE = 10;             // 每页条数
+    var COMPARE_KEY = "compare_ids";// localStorage 中对比 id 的键名
+    var SAVED_KEY = "saved_filters";// localStorage 中已保存筛选条件的键名
+    var MAX_SAVED = 8;              // 最多保存的筛选条件条数
+
+    // ----------------------------- 状态 -----------------------------
+    var state = {
+        page: 1,
+        total: 0,
+        totalPages: 1,
+        list: [],                                       // 当前页数据
+        selected: new Set(loadSelected()),              // 已选房源 id（跨页保持）
+        favorites: new Set(),                           // 已收藏房源 id（跨页保持）
+    };
+
+    // ----------------------------- DOM 引用 -----------------------------
+    var $ = function (id) { return document.getElementById(id); };
+    var elTbody = $("houseTbody");
+    var elTableWrap = $("tableWrap");
+    var elEmptyBox = $("emptyBox");
+    var elPagination = $("pagination");
+    var elPageInfo = $("pageInfo");
+    var elCheckAll = $("checkAll");
+    var elSelCount = $("selCount");
+    var elBtnCompare = $("btnCompare");
+
+    // ----------------------------- 存取已选 -----------------------------
+    function loadSelected() {
+        try {
+            var raw = localStorage.getItem(COMPARE_KEY);
+            var arr = raw ? JSON.parse(raw) : [];
+            return Array.isArray(arr) ? arr.map(Number).filter(function (n) { return !isNaN(n); }) : [];
+        } catch (e) {
+            return [];
+        }
+    }
+    function persistSelected() {
+        try {
+            localStorage.setItem(COMPARE_KEY, JSON.stringify(Array.from(state.selected)));
+        } catch (e) { /* 忽略存储异常 */ }
+    }
+
+    // ----------------------------- 滑块背景填充 -----------------------------
+    function paintRange(input) {
+        var min = Number(input.min) || 0;
+        var max = Number(input.max) || 100;
+        var val = Number(input.value);
+        var pct = max > min ? ((val - min) / (max - min)) * 100 : 0;
+        input.style.background =
+            "linear-gradient(90deg, var(--primary) 0%, var(--primary) " + pct + "%, " +
+            "var(--border) " + pct + "%, var(--border) 100%)";
+    }
+
+    // ----------------------------- 价格滑块联动 -----------------------------
+    var elMinPrice = $("minPrice");
+    var elMaxPrice = $("maxPrice");
+    var elMinPriceVal = $("minPriceVal");
+    var elMaxPriceVal = $("maxPriceVal");
+    var elPriceLabel = $("priceLabel");
+
+    function refreshPriceUI() {
+        var lo = Number(elMinPrice.value);
+        var hi = Number(elMaxPrice.value);
+
+        // 互相约束：最低不得大于最高
+        if (lo > hi) { lo = hi; elMinPrice.value = hi; }
+        if (hi < lo) { hi = lo; elMaxPrice.value = lo; }
+
+        elMinPriceVal.textContent = lo <= 0 ? "不限" : lo + " 万";
+        elMaxPriceVal.textContent = hi >= PRICE_MAX ? "不限" : hi + " 万";
+
+        if (lo <= 0 && hi >= PRICE_MAX) {
+            elPriceLabel.textContent = "不限";
+        } else {
+            elPriceLabel.textContent = (lo <= 0 ? "0" : lo) + " - " + (hi >= PRICE_MAX ? "不限" : hi) + " 万";
+        }
+        paintRange(elMinPrice);
+        paintRange(elMaxPrice);
+    }
+
+    elMinPrice.addEventListener("input", refreshPriceUI);
+    elMaxPrice.addEventListener("input", refreshPriceUI);
+
+    // ----------------------------- 收集筛选参数 -----------------------------
+    function collectParams() {
+        var params = {};
+        var district = $("fDistrict").value;
+        var roomNum = $("fRoomNum").value;
+        var decoration = $("fDecoration").value;
+        var elevator = $("fElevator").value;
+        var minSquare = $("minSquare").value;
+        var maxSquare = $("maxSquare").value;
+        var lo = Number(elMinPrice.value);
+        var hi = Number(elMaxPrice.value);
+
+        if (district) params.district = district;
+        if (roomNum) params.room_num = roomNum;
+        if (decoration) params.decoration = decoration;
+        if (elevator) params.elevator = elevator;
+        if (minSquare !== "") params.min_square = minSquare;
+        if (maxSquare !== "") params.max_square = maxSquare;
+        if (lo > 0) params.min_price = lo;
+        if (hi < PRICE_MAX) params.max_price = hi;
+        return params;
+    }
+
+    // ----------------------------- 将参数填入筛选控件 -----------------------------
+    function applyFilterParams(params) {
+        params = params || {};
+        $("fDistrict").value = params.district || "";
+        $("fRoomNum").value = params.room_num || "";
+        $("fDecoration").value = params.decoration || "";
+        $("fElevator").value = params.elevator || "";
+        $("minSquare").value = (params.min_square !== undefined && params.min_square !== null && params.min_square !== "")
+            ? params.min_square : "";
+        $("maxSquare").value = (params.max_square !== undefined && params.max_square !== null && params.max_square !== "")
+            ? params.max_square : "";
+        elMinPrice.value = (params.min_price !== undefined && params.min_price !== null && params.min_price !== "")
+            ? Number(params.min_price) : 0;
+        elMaxPrice.value = (params.max_price !== undefined && params.max_price !== null && params.max_price !== "")
+            ? Number(params.max_price) : PRICE_MAX;
+        refreshPriceUI();
+    }
+
+    // ----------------------------- 读取 URL 查询参数并预选筛选 -----------------------------
+    function applyUrlFilters() {
+        var sp = new URLSearchParams(window.location.search);
+        var keys = ["district", "min_price", "max_price", "min_square", "max_square",
+                    "room_num", "decoration", "elevator"];
+        var params = {};
+        var has = false;
+        keys.forEach(function (k) {
+            var v = sp.get(k);
+            if (v !== null && v !== "") { params[k] = v; has = true; }
+        });
+        if (!has) return false;
+        applyFilterParams(params);
+        return true;
+    }
+
+    // ----------------------------- 已保存筛选条件 -----------------------------
+    function loadSavedFilters() {
+        try {
+            var raw = localStorage.getItem(SAVED_KEY);
+            var arr = raw ? JSON.parse(raw) : [];
+            return Array.isArray(arr) ? arr : [];
+        } catch (e) {
+            return [];
+        }
+    }
+    function persistSavedFilters(arr) {
+        try { localStorage.setItem(SAVED_KEY, JSON.stringify(arr)); } catch (e) { /* 忽略存储异常 */ }
+    }
+
+    // 由当前筛选参数生成短标签名称
+    function buildFilterName(params) {
+        var parts = [];
+        if (params.district) parts.push(params.district);
+
+        var lo = params.min_price, hi = params.max_price;
+        if (lo !== undefined || hi !== undefined) {
+            if (lo !== undefined && hi !== undefined) parts.push(lo + "-" + hi + "万");
+            else if (lo !== undefined) parts.push(lo + "万以上");
+            else parts.push(hi + "万以下");
+        }
+        var slo = params.min_square, shi = params.max_square;
+        if (slo !== undefined || shi !== undefined) {
+            if (slo !== undefined && shi !== undefined) parts.push(slo + "-" + shi + "㎡");
+            else if (slo !== undefined) parts.push(slo + "㎡以上");
+            else parts.push(shi + "㎡以下");
+        }
+        if (params.room_num) parts.push(params.room_num + "室");
+        if (params.decoration) parts.push(params.decoration);
+        if (params.elevator) parts.push(params.elevator);
+
+        return parts.length ? parts.join(" · ") : "全部房源";
+    }
+
+    // 保存当前筛选
+    function saveCurrentFilter() {
+        var params = collectParams();
+        var name = buildFilterName(params);
+        var arr = loadSavedFilters().filter(function (it) {
+            return !(it && it.name === name);   // 同名覆盖
+        });
+        arr.push({ name: name, params: params, ts: Date.now() });
+        if (arr.length > MAX_SAVED) arr = arr.slice(arr.length - MAX_SAVED); // 超出丢弃最旧
+        persistSavedFilters(arr);
+        renderSavedFilters();
+        showToast("已保存筛选：" + name, "success");
+    }
+
+    // 渲染已保存筛选胶囊
+    function renderSavedFilters() {
+        var arr = loadSavedFilters();
+        var row = $("savedFiltersRow");
+        var box = $("savedFilters");
+        if (!arr.length) {
+            row.classList.add("d-none");
+            box.innerHTML = "";
+            return;
+        }
+        row.classList.remove("d-none");
+
+        var html = "";
+        arr.forEach(function (item, idx) {
+            html += '<span class="status-tag tag-primary saved-chip" data-index="' + idx + '" title="点击应用">'
+                  + '<span class="saved-chip-name">' + escapeHtml(item.name) + "</span>"
+                  + '<i class="bi bi-x saved-chip-del" data-index="' + idx + '" title="删除"></i>'
+                  + "</span>";
+        });
+        box.innerHTML = html;
+
+        Array.prototype.forEach.call(box.querySelectorAll(".saved-chip"), function (chip) {
+            chip.addEventListener("click", function (ev) {
+                if (ev.target.classList.contains("saved-chip-del")) return;
+                applySavedFilter(Number(chip.getAttribute("data-index")));
+            });
+        });
+        Array.prototype.forEach.call(box.querySelectorAll(".saved-chip-del"), function (del) {
+            del.addEventListener("click", function (ev) {
+                ev.stopPropagation();
+                deleteSavedFilter(Number(del.getAttribute("data-index")));
+            });
+        });
+    }
+
+    // 应用某条已保存筛选
+    function applySavedFilter(idx) {
+        var arr = loadSavedFilters();
+        var item = arr[idx];
+        if (!item) return;
+        applyFilterParams(item.params || {});
+        state.page = 1;
+        loadList();
+        showToast("已应用筛选：" + item.name, "info");
+    }
+
+    // 删除某条已保存筛选
+    function deleteSavedFilter(idx) {
+        var arr = loadSavedFilters();
+        if (idx < 0 || idx >= arr.length) return;
+        var removed = arr.splice(idx, 1)[0];
+        persistSavedFilters(arr);
+        renderSavedFilters();
+        if (removed) showToast("已删除筛选：" + removed.name, "info");
+    }
+
+    // ----------------------------- 区域下拉（动态） -----------------------------
+    async function loadDistricts() {
+        try {
+            var data = await apiFetch("/api/house/map_data/");
+            var list = (data && data.list) || [];
+            var seen = {};
+            var options = "";
+            list.forEach(function (item) {
+                var d = item && item.district;
+                if (d && !seen[d]) {
+                    seen[d] = true;
+                    options += '<option value="' + escapeHtml(d) + '">' + escapeHtml(d) + "</option>";
+                }
+            });
+            $("fDistrict").innerHTML = '<option value="">全部区域</option>' + options;
+        } catch (e) {
+            // 区域加载失败不阻塞主表格，仅提示
+            showToast("区域选项加载失败：" + e.message, "warning");
+        }
+    }
+
+    // ----------------------------- 标签渲染 -----------------------------
+    function decorationTag(value) {
+        var v = value || "";
+        var cls = "tag-grey";
+        if (v === "精装") cls = "tag-primary";
+        else if (v === "简装") cls = "tag-cyan";
+        else if (v === "毛坯") cls = "tag-grey";
+        else if (v === "其他") cls = "tag-warning";
+        if (!v) return '<span class="text-muted-2">--</span>';
+        return '<span class="status-tag ' + cls + '">' + escapeHtml(v) + "</span>";
+    }
+
+    function elevatorTag(value) {
+        var v = String(value == null ? "" : value);
+        var yes = (v === "有" || v === "true" || v === "1" || v === "yes" || v === "是");
+        var no = (v === "无" || v === "false" || v === "0" || v === "no" || v === "否");
+        if (!yes && !no) return '<span class="text-muted-2">--</span>';
+        return yes
+            ? '<span class="status-tag tag-success">有</span>'
+            : '<span class="status-tag tag-danger">无</span>';
+    }
+
+    function floorText(h) {
+        var parts = [];
+        if (h.floor !== null && h.floor !== undefined && h.floor !== "") parts.push(escapeHtml(h.floor));
+        if (h.floor_type) parts.push(escapeHtml(h.floor_type));
+        var base = parts.join(" · ");
+        if (h.total_floors !== null && h.total_floors !== undefined && h.total_floors !== "") {
+            base += (base ? " / " : "") + "共 " + escapeHtml(h.total_floors) + " 层";
+        }
+        return base || '<span class="text-muted-2">--</span>';
+    }
+
+    function sizeText(h) {
+        if (h.size) return escapeHtml(h.size);
+        var room = (h.room_num !== null && h.room_num !== undefined && h.room_num !== "") ? h.room_num + "室" : "";
+        var hall = (h.hall_num !== null && h.hall_num !== undefined && h.hall_num !== "") ? h.hall_num + "厅" : "";
+        var txt = room + hall;
+        return txt || '<span class="text-muted-2">--</span>';
+    }
+
+    // ----------------------------- 收藏 -----------------------------
+    function starBtnHtml(id) {
+        var fav = state.favorites.has(Number(id));
+        return '<button type="button" class="fav-btn' + (fav ? " is-fav" : "") + '"'
+            + ' data-id="' + escapeHtml(id) + '" title="' + (fav ? "取消收藏" : "收藏") + '">'
+            + '<i class="bi ' + (fav ? "bi-star-fill" : "bi-star") + '"></i></button>';
+    }
+
+    function paintStar(btn, favorited) {
+        if (!btn) return;
+        btn.classList.toggle("is-fav", favorited);
+        btn.title = favorited ? "取消收藏" : "收藏";
+        var icon = btn.querySelector("i");
+        if (icon) icon.className = "bi " + (favorited ? "bi-star-fill" : "bi-star");
+    }
+
+    function syncStarsUI() {
+        Array.prototype.forEach.call(elTbody.querySelectorAll(".fav-btn"), function (btn) {
+            paintStar(btn, state.favorites.has(Number(btn.getAttribute("data-id"))));
+        });
+    }
+
+    async function loadFavorites() {
+        try {
+            var data = await apiFetch("/api/house/favorite_ids/");
+            var ids = (data && data.ids) || [];
+            state.favorites = new Set(ids.map(Number).filter(function (n) { return !isNaN(n); }));
+            syncStarsUI();
+        } catch (e) {
+            // 收藏状态加载失败不阻塞主表格，仅日志
+        }
+    }
+
+    async function toggleFavorite(btn) {
+        var id = Number(btn.getAttribute("data-id"));
+        if (isNaN(id)) return;
+        btn.disabled = true;
+        try {
+            var data = await apiFetch("/api/house/favorite/", { method: "POST", body: { house_id: id } });
+            var favorited = !!(data && data.favorited);
+            if (favorited) {
+                state.favorites.add(id);
+                showToast("已收藏", "success");
+            } else {
+                state.favorites.delete(id);
+                showToast("已取消收藏", "info");
+            }
+            paintStar(btn, favorited);
+        } catch (e) {
+            if (String(e.message).indexOf("401") !== -1) {
+                showToast("请先登录后再收藏房源", "warning");
+                setTimeout(function () { window.location.href = "/login/"; }, 1000);
+            } else {
+                showToast("操作失败：" + e.message, "error");
+            }
+        } finally {
+            btn.disabled = false;
+        }
+    }
+
+    // ----------------------------- 渲染表格 -----------------------------
+    // 性价比标签：后端已按「相对同区域同户型均价的偏离度」分好档
+    function valuationTag(h) {
+        var v = h.valuation;
+        if (!v || !v.level_label) return '<span class="text-muted-2">--</span>';
+        var pct = v.peer_deviation_pct;
+        var text = (pct === null || pct === undefined)
+            ? v.level_label
+            : (pct > 0 ? "+" : "") + fmtNumber(pct, 1) + "%";
+        return '<span class="status-tag tag-' + escapeHtml(v.level_tag || "grey")
+            + '" title="' + escapeHtml(v.level_label) + '">' + escapeHtml(text) + "</span>";
+    }
+
+    function renderTable(list) {
+        if (!list.length) {
+            elTableWrap.classList.add("d-none");
+            renderEmpty(elEmptyBox, "没有符合条件的房源，试试调整筛选条件", "bi-search");
+            return;
+        }
+        elEmptyBox.innerHTML = "";
+        elTableWrap.classList.remove("d-none");
+
+        var html = "";
+        list.forEach(function (h) {
+            var checked = state.selected.has(Number(h.id)) ? "checked" : "";
+            html += "<tr>"
+                + '<td><input class="form-check-input row-check" type="checkbox" value="' + escapeHtml(h.id) + '" ' + checked + "></td>"
+                + "<td>" + escapeHtml(h.id) + "</td>"
+                + '<td class="col-title"><a class="t-ellipsis title-link" href="/house/' + Number(h.id) + '/" title="' + escapeHtml(h.title) + '">' + escapeHtml(h.title) + "</a></td>"
+                + "<td>" + (h.district ? escapeHtml(h.district) : '<span class="text-muted-2">--</span>') + "</td>"
+                + "<td>" + (h.community ? escapeHtml(h.community) : '<span class="text-muted-2">--</span>') + "</td>"
+                + "<td>" + sizeText(h) + "</td>"
+                + "<td>" + fmtArea(h.square) + "</td>"
+                + "<td>" + floorText(h) + "</td>"
+                + '<td class="fw-semibold">' + fmtPrice(h.total_price) + "</td>"
+                + "<td>" + fmtUnitPrice(h.unit_price) + "</td>"
+                + "<td>" + valuationTag(h) + "</td>"
+                + "<td>" + decorationTag(h.decoration) + "</td>"
+                + "<td>" + elevatorTag(h.elevator) + "</td>"
+                + "<td>" + starBtnHtml(h.id) + "</td>"
+                + "</tr>";
+        });
+        elTbody.innerHTML = html;
+
+        // 绑定行复选框
+        Array.prototype.forEach.call(elTbody.querySelectorAll(".row-check"), function (cb) {
+            cb.addEventListener("change", function () {
+                var id = Number(cb.value);
+                if (cb.checked) state.selected.add(id);
+                else state.selected.delete(id);
+                syncSelectionUI();
+            });
+        });
+        // 绑定收藏星标
+        Array.prototype.forEach.call(elTbody.querySelectorAll(".fav-btn"), function (btn) {
+            btn.addEventListener("click", function () { toggleFavorite(btn); });
+        });
+        syncSelectionUI();
+    }
+
+    // ----------------------------- 选择态同步 -----------------------------
+    function syncSelectionUI() {
+        // 表头全选：当前页是否全部选中
+        var boxes = elTbody.querySelectorAll(".row-check");
+        var allChecked = boxes.length > 0;
+        Array.prototype.forEach.call(boxes, function (cb) {
+            if (!cb.checked) allChecked = false;
+        });
+        elCheckAll.checked = allChecked;
+
+        var count = state.selected.size;
+        elSelCount.textContent = count;
+        elBtnCompare.disabled = !(count >= 2 && count <= 4);
+        persistSelected();
+    }
+
+    // ----------------------------- 渲染分页 -----------------------------
+    function renderPagination(page, totalPages) {
+        if (totalPages <= 1) { elPagination.innerHTML = ""; return; }
+
+        // 生成页码序列（含省略号）
+        var pages = [];
+        var start = Math.max(1, page - 2);
+        var end = Math.min(totalPages, page + 2);
+        if (start > 1) { pages.push(1); if (start > 2) pages.push("..."); }
+        for (var i = start; i <= end; i++) pages.push(i);
+        if (end < totalPages) { if (end < totalPages - 1) pages.push("..."); pages.push(totalPages); }
+
+        var html = "";
+        html += '<li class="page-item ' + (page <= 1 ? "disabled" : "") + '">'
+              + '<a class="page-link" href="javascript:void(0)" data-page="' + (page - 1) + '">上一页</a></li>';
+
+        pages.forEach(function (p) {
+            if (p === "...") {
+                html += '<li class="page-item disabled"><span class="page-link">…</span></li>';
+            } else {
+                html += '<li class="page-item ' + (p === page ? "active" : "") + '">'
+                      + '<a class="page-link" href="javascript:void(0)" data-page="' + p + '">' + p + "</a></li>";
+            }
+        });
+
+        html += '<li class="page-item ' + (page >= totalPages ? "disabled" : "") + '">'
+              + '<a class="page-link" href="javascript:void(0)" data-page="' + (page + 1) + '">下一页</a></li>';
+
+        elPagination.innerHTML = html;
+
+        Array.prototype.forEach.call(elPagination.querySelectorAll("a.page-link"), function (link) {
+            link.addEventListener("click", function () {
+                var target = Number(link.getAttribute("data-page"));
+                if (!target || target === state.page || target < 1 || target > state.totalPages) return;
+                state.page = target;
+                loadList().then(function () {
+                    elTableCardScroll();
+                });
+            });
+        });
+    }
+
+    function elTableCardScroll() {
+        var card = $("tableCard");
+        if (card) card.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+
+    // ----------------------------- 主加载 -----------------------------
+    async function loadList() {
+        // 骨架屏
+        elEmptyBox.innerHTML = "";
+        elTableWrap.classList.remove("d-none");
+        renderSkeleton("#houseTbody", 8, 14);
+
+        var params = collectParams();
+        params.page = state.page;
+        params.page_size = PAGE_SIZE;
+
+        try {
+            var data = await apiFetch("/api/house/list/", { params: params });
+            state.list = (data && data.list) || [];
+            state.total = (data && data.total) || 0;
+            state.totalPages = (data && data.total_pages) || 1;
+            state.page = (data && data.page) || state.page;
+
+            renderTable(state.list);
+            renderPagination(state.page, state.totalPages);
+            elPageInfo.textContent = "共 " + fmtNumber(state.total) + " 条 / 第 " + state.page + " 页";
+        } catch (e) {
+            showToast("数据加载失败：" + e.message, "error");
+            elTableWrap.classList.add("d-none");
+            renderEmpty(elEmptyBox, "数据加载失败，请稍后重试", "bi-exclamation-triangle");
+            elPagination.innerHTML = "";
+            elPageInfo.textContent = "共 0 条 / 第 1 页";
+        }
+    }
+
+    // ----------------------------- 导出 -----------------------------
+    function exportFile(fileType) {
+        var params = collectParams();
+        params.file_type = fileType;
+        var qs = new URLSearchParams();
+        Object.keys(params).forEach(function (k) {
+            if (params[k] !== null && params[k] !== undefined && params[k] !== "") qs.append(k, params[k]);
+        });
+        // 直接用浏览器触发下载（接口返回文件流，不能用 apiFetch 解析）
+        window.location.href = "/api/house/export/?" + qs.toString();
+        showToast("已开始导出 " + (fileType === "csv" ? "CSV" : "Excel") + " 文件", "success");
+    }
+
+    // ----------------------------- 事件绑定 -----------------------------
+    // 查询：重置到第 1 页
+    $("btnSearch").addEventListener("click", function () {
+        state.page = 1;
+        loadList();
+    });
+
+    // 重置：清空全部筛选
+    $("btnReset").addEventListener("click", function () {
+        $("fDistrict").value = "";
+        $("fRoomNum").value = "";
+        $("fDecoration").value = "";
+        $("fElevator").value = "";
+        $("minSquare").value = "";
+        $("maxSquare").value = "";
+        elMinPrice.value = 0;
+        elMaxPrice.value = PRICE_MAX;
+        refreshPriceUI();
+        state.page = 1;
+        loadList();
+        showToast("已重置筛选条件", "info");
+    });
+
+    // 表头全选（仅当前页）
+    elCheckAll.addEventListener("change", function () {
+        var checked = elCheckAll.checked;
+        Array.prototype.forEach.call(elTbody.querySelectorAll(".row-check"), function (cb) {
+            cb.checked = checked;
+            var id = Number(cb.value);
+            if (checked) state.selected.add(id);
+            else state.selected.delete(id);
+        });
+        syncSelectionUI();
+    });
+
+    // 添加到对比
+    elBtnCompare.addEventListener("click", function () {
+        var ids = Array.from(state.selected);
+        if (ids.length < 2 || ids.length > 4) {
+            showToast("请选择 2 - 4 套房源进行对比", "warning");
+            return;
+        }
+        persistSelected();
+        window.location.href = "/compare/?ids=" + ids.join(",");
+    });
+
+    // 导出按钮
+    $("btnExportCsv").addEventListener("click", function () { exportFile("csv"); });
+    $("btnExportXlsx").addEventListener("click", function () { exportFile("xlsx"); });
+
+    // 保存当前筛选
+    $("btnSaveFilter").addEventListener("click", function () { saveCurrentFilter(); });
+
+    // 面积输入：最小值大于最大值时自动纠正
+    $("minSquare").addEventListener("blur", function () {
+        var lo = this.value, hi = $("maxSquare").value;
+        if (lo !== "" && hi !== "" && Number(lo) > Number(hi)) $("maxSquare").value = lo;
+    });
+    $("maxSquare").addEventListener("blur", function () {
+        var hi = this.value, lo = $("minSquare").value;
+        if (lo !== "" && hi !== "" && Number(hi) < Number(lo)) $("minSquare").value = hi;
+    });
+
+    // ----------------------------- 初始化 -----------------------------
+    document.addEventListener("DOMContentLoaded", async function () {
+        refreshPriceUI();
+        // 先加载区域选项，确保 URL/saved 中的区域值能被选中
+        await loadDistricts();
+        applyUrlFilters();          // 功能一：URL 查询参数预选筛选
+        renderSavedFilters();       // 功能三：渲染已保存筛选胶囊
+        loadList();                 // 用当前条件查询一次
+        loadFavorites();            // 功能二：初始化收藏星标状态
+    });
+})();
+</script>
+{% endblock %}

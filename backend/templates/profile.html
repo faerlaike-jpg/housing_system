@@ -1,0 +1,507 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}个人中心 · 潍坊市二手房房价预测系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ===== 个人中心专属样式 ===== */
+    .avatar-circle {
+        width: 72px; height: 72px; border-radius: 50%;
+        display: grid; place-items: center; flex-shrink: 0;
+        background: var(--primary-soft); color: var(--primary); font-size: 40px;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- ==================== 加载骨架 ==================== -->
+<div id="profileLoading">
+    <div class="app-card mb-3">
+        <div class="skeleton skeleton-line" style="width: 30%; height: 24px;"></div>
+        <div class="skeleton skeleton-line" style="width: 18%;"></div>
+    </div>
+    <div class="row g-3">
+        <div class="col-lg-6">
+            <div class="app-card"><div class="skeleton" style="height: 200px; border-radius: 10px;"></div></div>
+        </div>
+        <div class="col-lg-6">
+            <div class="app-card"><div class="skeleton" style="height: 200px; border-radius: 10px;"></div></div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== 未登录提示 ==================== -->
+<div id="profileUnauth" class="app-card" style="display: none;">
+    <div class="empty-state">
+        <i class="bi bi-lock empty-icon"></i>
+        <div class="empty-text mb-3">请先登录后再查看个人中心</div>
+        <a href="/login/?next=/profile/" class="btn btn-gradient">
+            <i class="bi bi-box-arrow-in-right me-1"></i>去登录
+        </a>
+    </div>
+</div>
+
+<!-- ==================== 个人中心内容 ==================== -->
+<div id="profileContent" style="display: none;">
+
+    <!-- 顶部用户信息卡片 -->
+    <div class="app-card mb-3">
+        <div class="d-flex align-items-center flex-wrap gap-3">
+            <div class="avatar-circle"><i class="bi bi-person-circle"></i></div>
+            <div class="flex-grow-1">
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <span class="fs-4 fw-bold" id="pUsername">--</span>
+                    <span class="status-tag tag-grey" id="pRoleTag">普通用户</span>
+                </div>
+                <div class="text-muted-2 mt-1" style="font-size: 13px;">
+                    <i class="bi bi-calendar3 me-1"></i>注册时间：<span id="pDateJoined">--</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <!-- 基本资料 -->
+        <div class="col-lg-6">
+            <div class="app-card h-100">
+                <div class="card-title-line"><i class="bi bi-person-lines-fill"></i>基本资料</div>
+                <form id="baseInfoForm" novalidate>
+                    <div class="mb-3">
+                        <label class="form-label" for="pEmail">邮箱</label>
+                        <input type="email" class="form-control" id="pEmail" placeholder="请输入邮箱">
+                        <div class="invalid-feedback"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="pPhone">手机号</label>
+                        <input type="text" class="form-control" id="pPhone"
+                               placeholder="请输入手机号" maxlength="11">
+                        <div class="invalid-feedback"></div>
+                    </div>
+                    <button type="submit" class="btn btn-brand" id="baseInfoSubmit">
+                        <i class="bi bi-save me-1"></i>保存资料
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- 修改密码 -->
+        <div class="col-lg-6">
+            <div class="app-card h-100">
+                <div class="card-title-line"><i class="bi bi-shield-lock"></i>修改密码</div>
+                <form id="pwdForm" novalidate>
+                    <div class="mb-3">
+                        <label class="form-label" for="oldPassword">旧密码</label>
+                        <input type="password" class="form-control" id="oldPassword"
+                               placeholder="请输入当前密码" autocomplete="current-password">
+                        <div class="invalid-feedback"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="newPassword">新密码</label>
+                        <input type="password" class="form-control" id="newPassword"
+                               placeholder="至少 6 位" autocomplete="new-password">
+                        <div class="invalid-feedback"></div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="confirmPassword">确认新密码</label>
+                        <input type="password" class="form-control" id="confirmPassword"
+                               placeholder="请再次输入新密码" autocomplete="new-password">
+                        <div class="invalid-feedback"></div>
+                    </div>
+                    <button type="submit" class="btn btn-brand" id="pwdSubmit">
+                        <i class="bi bi-key me-1"></i>修改密码
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== 我的预测记录 ==================== -->
+    <div class="app-card mb-3">
+        <div class="card-title-line"><i class="bi bi-clock-history"></i>我的预测记录</div>
+        <div class="table-responsive" id="predHistoryWrap">
+            <table class="table-brand">
+                <thead>
+                    <tr>
+                        <th>预测时间</th>
+                        <th>行政区</th>
+                        <th>面积</th>
+                        <th>户型</th>
+                        <th>装修</th>
+                        <th>电梯</th>
+                        <th>预测总价</th>
+                        <th>预测单价</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="predHistoryTbody"></tbody>
+            </table>
+        </div>
+        <div id="predHistoryEmpty"></div>
+    </div>
+
+    <!-- ==================== 我的房源收藏 ==================== -->
+    <div class="app-card">
+        <div class="card-title-line"><i class="bi bi-star"></i>我的房源收藏</div>
+        <div class="row g-3" id="favList"></div>
+        <div id="favEmpty"></div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    "use strict";
+
+    const loadingEl = document.getElementById("profileLoading");
+    const unauthEl = document.getElementById("profileUnauth");
+    const contentEl = document.getElementById("profileContent");
+
+    /* -------------------- 通用工具 -------------------- */
+    function fmtDate(v) {
+        if (!v) return "--";
+        return String(v).replace("T", " ").slice(0, 19);
+    }
+    function setError(input, msg) {
+        input.classList.add("is-invalid");
+        const fb = input.parentElement.querySelector(".invalid-feedback");
+        if (fb) fb.textContent = msg;
+    }
+    function clearError(input) {
+        input.classList.remove("is-invalid");
+        const fb = input.parentElement.querySelector(".invalid-feedback");
+        if (fb) fb.textContent = "";
+    }
+    function setLoading(btn, loading, text) {
+        if (loading) {
+            btn.dataset.original = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>' + text;
+        } else {
+            btn.disabled = false;
+            if (btn.dataset.original) btn.innerHTML = btn.dataset.original;
+        }
+    }
+    const isPhone = v => /^1[3-9]\d{9}$/.test(v);
+    const isEmail = v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+
+    function showUnauth() {
+        loadingEl.style.display = "none";
+        contentEl.style.display = "none";
+        unauthEl.style.display = "block";
+    }
+
+    /* -------------------- 渲染个人信息 -------------------- */
+    function renderProfile(d) {
+        loadingEl.style.display = "none";
+        unauthEl.style.display = "none";
+        contentEl.style.display = "block";
+        contentEl.classList.add("fade-up");
+
+        document.getElementById("pUsername").textContent = d.username || "--";
+        document.getElementById("pDateJoined").textContent = fmtDate(d.date_joined);
+
+        // 角色标签：管理员 / 普通用户
+        const roleTag = document.getElementById("pRoleTag");
+        if (d.role === 1 || d.is_staff || d.is_superuser) {
+            roleTag.className = "status-tag tag-primary";
+            roleTag.textContent = "管理员";
+        } else {
+            roleTag.className = "status-tag tag-grey";
+            roleTag.textContent = "普通用户";
+        }
+
+        document.getElementById("pEmail").value = d.email || "";
+        document.getElementById("pPhone").value = d.phone || "";
+        // avatar 为文件名时统一使用默认 person-circle 图标（已在 HTML 占位）
+
+        // 已确认登录后再加载附加内容，避免未登录时产生无意义的 401
+        loadPredHistory();
+        loadFavorites();
+    }
+
+    /* -------------------- 加载个人信息 -------------------- */
+    async function loadProfile() {
+        try {
+            const data = await apiFetch("/api/user/profile/");
+            renderProfile(data);
+        } catch (e) {
+            // 未登录（HTTP 401）或业务失败，均展示去登录引导
+            showUnauth();
+        }
+    }
+
+    /* -------------------- 保存基本资料 -------------------- */
+    document.getElementById("baseInfoForm").addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const emailEl = document.getElementById("pEmail");
+        const phoneEl = document.getElementById("pPhone");
+        clearError(emailEl); clearError(phoneEl);
+
+        let ok = true;
+        if (emailEl.value.trim() && !isEmail(emailEl.value.trim())) {
+            setError(emailEl, "邮箱格式不正确"); ok = false;
+        }
+        if (phoneEl.value.trim() && !isPhone(phoneEl.value.trim())) {
+            setError(phoneEl, "手机号格式不正确"); ok = false;
+        }
+        if (!ok) return;
+
+        const btn = document.getElementById("baseInfoSubmit");
+        setLoading(btn, true, "保存中...");
+        try {
+            await apiFetch("/api/user/profile/", {
+                method: "POST",
+                body: { email: emailEl.value.trim(), phone: phoneEl.value.trim() },
+            });
+            showToast("基本资料已更新", "success");
+        } catch (err) {
+            showToast(err.message, "error");
+        } finally {
+            setLoading(btn, false);
+        }
+    });
+
+    /* -------------------- 修改密码 -------------------- */
+    document.getElementById("pwdForm").addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const oldEl = document.getElementById("oldPassword");
+        const newEl = document.getElementById("newPassword");
+        const confirmEl = document.getElementById("confirmPassword");
+        [oldEl, newEl, confirmEl].forEach(clearError);
+
+        let ok = true;
+        if (!oldEl.value) { setError(oldEl, "请输入旧密码"); ok = false; }
+        if (!newEl.value) { setError(newEl, "请输入新密码"); ok = false; }
+        else if (newEl.value.length < 6) { setError(newEl, "新密码至少 6 位"); ok = false; }
+        if (!confirmEl.value) { setError(confirmEl, "请再次输入新密码"); ok = false; }
+        else if (confirmEl.value !== newEl.value) {
+            setError(confirmEl, "两次输入的密码不一致"); ok = false;
+        }
+        if (!ok) return;
+
+        const btn = document.getElementById("pwdSubmit");
+        setLoading(btn, true, "提交中...");
+        try {
+            await apiFetch("/api/user/profile/", {
+                method: "POST",
+                body: { old_password: oldEl.value, new_password: newEl.value },
+            });
+            showToast("密码修改成功", "success");
+            document.getElementById("pwdForm").reset();
+        } catch (err) {
+            showToast(err.message, "error");
+        } finally {
+            setLoading(btn, false);
+        }
+    });
+
+    /* -------------------- 标签 / 文案渲染工具 -------------------- */
+    function decorationTag(value) {
+        const v = value || "";
+        if (!v) return '<span class="text-muted-2">--</span>';
+        let cls = "tag-grey";
+        if (v === "精装") cls = "tag-primary";
+        else if (v === "简装") cls = "tag-cyan";
+        else if (v === "毛坯") cls = "tag-grey";
+        else if (v === "其他") cls = "tag-warning";
+        return '<span class="status-tag ' + cls + '">' + escapeHtml(v) + "</span>";
+    }
+    function elevatorTag(value) {
+        const v = String(value === null || value === undefined ? "" : value);
+        const yes = (v === "有" || v === "true" || v === "1" || v === "yes" || v === "是");
+        const no = (v === "无" || v === "false" || v === "0" || v === "no" || v === "否");
+        if (!yes && !no) return '<span class="text-muted-2">--</span>';
+        return yes ? '<span class="status-tag tag-success">有</span>'
+                   : '<span class="status-tag tag-danger">无</span>';
+    }
+    function sizeText(o) {
+        if (o.size) return escapeHtml(o.size);
+        const room = (o.room_num !== null && o.room_num !== undefined && o.room_num !== "") ? o.room_num + "室" : "";
+        const hall = (o.hall_num !== null && o.hall_num !== undefined && o.hall_num !== "") ? o.hall_num + "厅" : "";
+        return (room + hall) || '<span class="text-muted-2">--</span>';
+    }
+    function emptyWithBtn(text, icon, btnText, href) {
+        return '<div class="empty-state">'
+            + '<i class="bi ' + icon + ' empty-icon"></i>'
+            + '<div class="empty-text mb-3">' + escapeHtml(text) + "</div>"
+            + '<a href="' + href + '" class="btn btn-gradient">' + escapeHtml(btnText) + "</a>"
+            + "</div>";
+    }
+
+    /* -------------------- 我的预测记录 -------------------- */
+    const predWrap = document.getElementById("predHistoryWrap");
+    const predEmpty = document.getElementById("predHistoryEmpty");
+    const predTbody = document.getElementById("predHistoryTbody");
+
+    function renderPredHistory(data) {
+        const list = (data && data.list) || [];
+        if (!list.length) {
+            predWrap.classList.add("d-none");
+            predEmpty.innerHTML = emptyWithBtn("还没有预测记录，去试试房价预测吧",
+                "bi-clock-history", "去房价预测", "/predict/");
+            return;
+        }
+        predEmpty.innerHTML = "";
+        predWrap.classList.remove("d-none");
+
+        let html = "";
+        list.forEach(function (r) {
+            html += "<tr>"
+                + "<td>" + escapeHtml(fmtDate(r.created_at)) + "</td>"
+                + "<td>" + (r.district ? escapeHtml(r.district) : '<span class="text-muted-2">--</span>') + "</td>"
+                + "<td>" + fmtArea(r.square) + "</td>"
+                + "<td>" + sizeText(r) + "</td>"
+                + "<td>" + decorationTag(r.decoration) + "</td>"
+                + "<td>" + elevatorTag(r.elevator) + "</td>"
+                + '<td class="fw-semibold">' + fmtPrice(r.predicted_total_price) + "</td>"
+                + "<td>" + fmtUnitPrice(r.predicted_unit_price) + "</td>"
+                + '<td><button type="button" class="btn btn-outline-soft btn-sm py-0 px-2 pred-del"'
+                + ' data-id="' + escapeHtml(r.predict_id) + '" title="删除该记录">'
+                + '<i class="bi bi-trash3" style="color:var(--danger);"></i></button></td>'
+                + "</tr>";
+        });
+        predTbody.innerHTML = html;
+    }
+
+    async function deletePredRecord(predictId, rowEl) {
+        if (!predictId || !rowEl) return;
+        if (!window.confirm("确定要删除这条预测记录吗？删除后不可恢复。")) return;
+        try {
+            await apiFetch("/api/house/predict_history/delete/", {
+                method: "POST",
+                body: { predict_id: Number(predictId) },
+            });
+            showToast("预测记录已删除", "success");
+            rowEl.remove();
+            if (!predTbody.querySelector("tr")) {
+                predWrap.classList.add("d-none");
+                predEmpty.innerHTML = emptyWithBtn("还没有预测记录，去试试房价预测吧",
+                    "bi-clock-history", "去房价预测", "/predict/");
+            }
+        } catch (e) {
+            showToast(e.message, "error");
+        }
+    }
+
+    // 事件委托：删除按钮为动态渲染，统一挂在 tbody 上
+    predTbody.addEventListener("click", function (e) {
+        const btn = e.target.closest(".pred-del");
+        if (!btn) return;
+        deletePredRecord(btn.getAttribute("data-id"), btn.closest("tr"));
+    });
+
+    async function loadPredHistory() {
+        predEmpty.innerHTML = "";
+        predWrap.classList.remove("d-none");
+        renderSkeleton("#predHistoryTbody", 5, 7);
+        try {
+            const data = await apiFetch("/api/house/predict_history/", { params: { limit: 30 } });
+            renderPredHistory(data);
+        } catch (e) {
+            predWrap.classList.add("d-none");
+            renderEmpty(predEmpty, "预测记录加载失败，请稍后重试", "bi-exclamation-triangle");
+        }
+    }
+
+    /* -------------------- 我的房源收藏 -------------------- */
+    const favList = document.getElementById("favList");
+    const favEmpty = document.getElementById("favEmpty");
+
+    function favEmptyHtml() {
+        return emptyWithBtn("还没有收藏房源，去数据列表看看吧",
+            "bi-star", "去数据列表", "/data-list/");
+    }
+
+    function renderFavorites(data) {
+        const list = (data && data.list) || [];
+        if (!list.length) {
+            favList.classList.add("d-none");
+            favEmpty.innerHTML = favEmptyHtml();
+            return;
+        }
+        favEmpty.innerHTML = "";
+        favList.classList.remove("d-none");
+
+        let html = "";
+        list.forEach(function (h) {
+            html += '<div class="col-12 col-md-6 col-lg-4" data-house-id="' + escapeHtml(h.id) + '">'
+                + '<div class="app-card hoverable h-100 d-flex flex-column">'
+                + '<div class="d-flex align-items-start gap-2 mb-2">'
+                + '<a href="/house/' + encodeURIComponent(h.id) + '/" class="fw-semibold text-truncate flex-grow-1"'
+                + ' style="min-width:0;" title="' + escapeHtml(h.title) + '">' + escapeHtml(h.title) + "</a>"
+                + '<button type="button" class="btn btn-outline-soft btn-sm py-0 px-2 fav-cancel"'
+                + ' data-id="' + escapeHtml(h.id) + '" title="取消收藏">'
+                + '<i class="bi bi-star-fill" style="color:var(--warning);"></i></button>'
+                + "</div>"
+                + '<div class="d-flex flex-wrap gap-1 mb-2">'
+                + (h.district ? '<span class="status-tag tag-grey">' + escapeHtml(h.district) + "</span>" : "")
+                + (h.community ? '<span class="status-tag tag-grey">' + escapeHtml(h.community) + "</span>" : "")
+                + "</div>"
+                + '<div class="text-muted-2" style="font-size:13px;">'
+                + '<i class="bi bi-rulers me-1"></i>' + fmtArea(h.square)
+                + ' <span class="mx-1">·</span>' + sizeText(h)
+                + "</div>"
+                + '<div class="d-flex flex-wrap gap-1 mt-2">'
+                + '<span class="status-tag tag-primary">总价 ' + fmtPrice(h.total_price) + "</span>"
+                + '<span class="status-tag tag-cyan">单价 ' + fmtUnitPrice(h.unit_price) + "</span>"
+                + "</div>"
+                + '<div class="text-muted-2 mt-2" style="font-size:12px;">'
+                + '<i class="bi bi-clock me-1"></i>收藏于 ' + escapeHtml(fmtDate(h.favorited_at))
+                + "</div>"
+                + "</div></div>";
+        });
+        favList.innerHTML = html;
+
+        Array.prototype.forEach.call(favList.querySelectorAll(".fav-cancel"), function (btn) {
+            btn.addEventListener("click", function () {
+                unfavorite(btn.getAttribute("data-id"), btn.closest("[data-house-id]"));
+            });
+        });
+    }
+
+    async function unfavorite(houseId, cardEl) {
+        if (!houseId || !cardEl) return;
+        try {
+            await apiFetch("/api/house/favorite/", {
+                method: "POST",
+                body: { house_id: Number(houseId) },
+            });
+            showToast("已取消收藏", "success");
+            cardEl.remove();
+            if (!favList.querySelector("[data-house-id]")) {
+                favList.classList.add("d-none");
+                favEmpty.innerHTML = favEmptyHtml();
+            }
+        } catch (e) {
+            showToast(e.message, "error");
+        }
+    }
+
+    async function loadFavorites() {
+        favEmpty.innerHTML = "";
+        favList.classList.remove("d-none");
+        let sk = "";
+        for (let i = 0; i < 3; i++) {
+            sk += '<div class="col-12 col-md-6 col-lg-4"><div class="app-card h-100">'
+                + '<div class="skeleton skeleton-line" style="width:70%;"></div>'
+                + '<div class="skeleton skeleton-line" style="width:42%;"></div>'
+                + '<div class="skeleton" style="height:50px;border-radius:8px;"></div>'
+                + "</div></div>";
+        }
+        favList.innerHTML = sk;
+        try {
+            const data = await apiFetch("/api/house/favorites/", { params: { limit: 100 } });
+            renderFavorites(data);
+        } catch (e) {
+            favList.classList.add("d-none");
+            renderEmpty(favEmpty, "收藏列表加载失败，请稍后重试", "bi-exclamation-triangle");
+        }
+    }
+
+    /* -------------------- 初始化 -------------------- */
+    loadProfile();
+})();
+</script>
+{% endblock %}

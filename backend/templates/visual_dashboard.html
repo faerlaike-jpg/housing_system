@@ -1,0 +1,535 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}数据分析仪表盘 · 潍坊市二手房房价预测系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 统计看板图标底色（复用 .stat-card 结构，仅补充图标配色） */
+    .stat-icon.ic-primary { background: var(--primary-soft);   color: var(--primary); }
+    .stat-icon.ic-cyan    { background: var(--secondary-soft); color: #0FA9A3; }
+    .stat-icon.ic-warning { background: var(--warning-soft);   color: var(--warning); }
+    .stat-icon.ic-success { background: var(--success-soft);   color: var(--success); }
+    /* 数值单位后缀 */
+    .stat-unit { font-size: 13px; font-weight: 500; color: var(--text-3); margin-left: 3px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- ============================ 统计数字看板 ============================ -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-lg-3">
+        <div class="stat-card fade-up">
+            <div class="stat-icon ic-primary"><i class="bi bi-houses"></i></div>
+            <div>
+                <div class="stat-value"><span id="statTotal">0</span><span class="stat-unit">套</span></div>
+                <div class="stat-label">总房源数</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card fade-up">
+            <div class="stat-icon ic-cyan"><i class="bi bi-cash-coin"></i></div>
+            <div>
+                <div class="stat-value"><span id="statAvgTotal">0</span><span class="stat-unit">万</span></div>
+                <div class="stat-label">平均总价</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card fade-up">
+            <div class="stat-icon ic-warning"><i class="bi bi-tag"></i></div>
+            <div>
+                <div class="stat-value"><span id="statAvgUnit">0</span><span class="stat-unit">元/㎡</span></div>
+                <div class="stat-label">平均单价</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-lg-3">
+        <div class="stat-card fade-up">
+            <div class="stat-icon ic-success"><i class="bi bi-geo-alt"></i></div>
+            <div>
+                <div class="stat-value"><span id="statCommunity">0</span><span class="stat-unit">个</span></div>
+                <div class="stat-label">小区数量</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================ 图表区域 ============================ -->
+<div class="row g-3">
+    <!-- a) 各区挂牌量与均价组合图（占满整行） -->
+    <div class="col-12">
+        <div class="app-card fade-up">
+            <div class="card-title-line"><i class="bi bi-bar-chart-line"></i>潍坊各区挂牌量与均价</div>
+            <div class="chart-box" id="chartDistrict"></div>
+        </div>
+    </div>
+
+    <!-- b) 装修占比环形饼图 -->
+    <div class="col-12 col-lg-6">
+        <div class="app-card fade-up">
+            <div class="card-title-line"><i class="bi bi-pie-chart"></i>装修情况占比</div>
+            <div class="chart-box" id="chartDecoration"></div>
+        </div>
+    </div>
+
+    <!-- c) 户型均价对比图 -->
+    <div class="col-12 col-lg-6">
+        <div class="app-card fade-up">
+            <div class="card-title-line"><i class="bi bi-graph-up"></i>各户型平均单价</div>
+            <div class="chart-box" id="chartRoom"></div>
+        </div>
+    </div>
+
+    <!-- d) TOP20 热门小区横向条形图 -->
+    <div class="col-12">
+        <div class="app-card fade-up">
+            <div class="card-title-line"><i class="bi bi-fire"></i>TOP20 热门小区挂牌量</div>
+            <div class="chart-box" id="chartCommunity" style="height:520px;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================ 特征关系分析 ============================ -->
+<div class="row g-3 mt-1">
+    <!-- e) 房屋面积与总价散点分布 -->
+    <div class="col-12 col-lg-6">
+        <div class="app-card fade-up">
+            <div class="card-title-line">
+                <i class="bi bi-graph-up-arrow"></i>房屋面积与总价散点分布
+                <span class="status-tag tag-grey ms-auto" id="scatterMeta">--</span>
+            </div>
+            <div class="chart-box" id="chartScatter"></div>
+        </div>
+    </div>
+
+    <!-- f) 各特征相关性矩阵 -->
+    <div class="col-12 col-lg-6">
+        <div class="app-card fade-up">
+            <div class="card-title-line"><i class="bi bi-grid-3x3-gap"></i>各特征相关性矩阵</div>
+            <div class="chart-box" id="chartCorrelation"></div>
+        </div>
+    </div>
+
+    <!-- g) 随机森林特征重要性 -->
+    <div class="col-12">
+        <div class="app-card fade-up">
+            <div class="card-title-line"><i class="bi bi-sort-down"></i>随机森林特征重要性</div>
+            <div class="chart-box" id="chartImportance" style="height:320px;"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    "use strict";
+
+    // 图表容器 id：离线统计结果 4 张 + 实时特征关系分析 3 张
+    var STATS_CHART_IDS = ["chartDistrict", "chartDecoration", "chartRoom", "chartCommunity"];
+    var RELATION_CHART_IDS = ["chartScatter", "chartCorrelation", "chartImportance"];
+    var CHART_IDS = STATS_CHART_IDS.concat(RELATION_CHART_IDS);
+    var charts = [];                       // 保存全部图表实例，便于统一 resize
+
+    var $ = function (id) { return document.getElementById(id); };
+
+    // 初始化图表容器：若已有实例先销毁，避免重复初始化告警
+    function initChart(box) {
+        var exist = echarts.getInstanceByDom(box);
+        if (exist) exist.dispose();
+        return echarts.init(box);
+    }
+
+    // ----------------------------- 统计数字看板 -----------------------------
+    function renderSummary(summary) {
+        var s = summary || {};
+        countUp($("statTotal"), s.total_houses || 0, 0);          // 总房源数（整数）
+        countUp($("statAvgTotal"), s.avg_total_price || 0, 1);    // 平均总价（保留 1 位）
+        countUp($("statAvgUnit"), s.avg_unit_price || 0, 0);      // 平均单价（整数）
+        countUp($("statCommunity"), s.community_count || 0, 0);   // 小区数量（整数）
+    }
+
+    // ----------------------------- 骨架占位 -----------------------------
+    function showSkeletons() {
+        CHART_IDS.forEach(function (id) { renderChartSkeleton("#" + id); });
+    }
+
+    // ----------------------------- 初始化单个图表 -----------------------------
+    // buildOption 返回 null 表示无数据，此时展示空状态
+    function buildChart(id, buildOption) {
+        var box = $(id);
+        if (!box) return null;
+        box.innerHTML = "";                                   // 清掉骨架内容
+        var chart = initChart(box);
+        var option = buildOption();
+        if (option) chart.setOption(option);
+        else showChartEmpty(chart, "暂无数据");
+        charts.push(chart);
+        return chart;
+    }
+
+    // ----------------------------- a) 各区挂牌量 + 均价组合图 -----------------------------
+    function buildDistrictOption(list) {
+        if (!list || !list.length) return null;
+        var names = list.map(function (d) { return d.district || "--"; });
+        var counts = list.map(function (d) { return d.house_count || 0; });
+        var prices = list.map(function (d) { return d.avg_unit_price || 0; });
+
+        var option = baseChartOption();
+        option.legend = { top: 6, right: 10, itemWidth: 12, itemHeight: 12,
+                          textStyle: { color: "#4E5969", fontSize: 12 } };
+        option.grid = Object.assign({}, option.grid, { top: 56, bottom: 34 });
+        option.xAxis = Object.assign({}, option.xAxis, {
+            type: "category", data: names,
+            axisLabel: { color: "#86909C", fontSize: 12, interval: 0,
+                         rotate: names.length > 6 ? 30 : 0 },
+        });
+        // 双 Y 轴：左轴挂牌量、右轴均价
+        option.yAxis = [
+            { type: "value", name: "挂牌量（套）", nameTextStyle: { color: "#86909C", fontSize: 12 },
+              axisLine: { show: false }, axisTick: { show: false },
+              axisLabel: { color: "#86909C", fontSize: 12 },
+              splitLine: { lineStyle: { color: "#F2F3F5", type: "dashed" } } },
+            { type: "value", name: "均价（元/㎡）", nameTextStyle: { color: "#86909C", fontSize: 12 },
+              axisLine: { show: false }, axisTick: { show: false },
+              axisLabel: { color: "#86909C", fontSize: 12 }, splitLine: { show: false } },
+        ];
+        option.series = [
+            { name: "挂牌量", type: "bar", data: counts, barWidth: "44%",
+              itemStyle: { borderRadius: [6, 6, 0, 0],
+                  color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                      { offset: 0, color: "#4E86FF" }, { offset: 1, color: "#94BFFF" }]) } },
+            { name: "均价", type: "line", yAxisIndex: 1, data: prices, smooth: true,
+              symbol: "circle", symbolSize: 7,
+              lineStyle: { width: 3, color: "#36CFC9" }, itemStyle: { color: "#36CFC9" },
+              areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                  { offset: 0, color: "rgba(54,207,201,0.30)" },
+                  { offset: 1, color: "rgba(54,207,201,0.02)" }]) } },
+        ];
+        return option;
+    }
+
+    // ----------------------------- b) 装修占比环形饼图 -----------------------------
+    function buildDecorationOption(list) {
+        if (!list || !list.length) return null;
+        var option = baseChartOption();
+        delete option.grid;                                   // 饼图无需网格
+        option.xAxis = null;
+        option.yAxis = null;
+        option.tooltip = Object.assign({}, option.tooltip, {
+            trigger: "item", formatter: "{b}<br/>挂牌量：{c} 套（{d}%）",
+        });
+        option.legend = { bottom: 0, icon: "circle", itemWidth: 10, itemHeight: 10,
+                          textStyle: { color: "#4E5969", fontSize: 12 } };
+        option.series = [{
+            type: "pie", radius: ["45%", "70%"], center: ["50%", "46%"],
+            avoidLabelOverlap: true,
+            itemStyle: { borderColor: "#fff", borderWidth: 2, borderRadius: 6 },
+            label: { show: true, formatter: "{b}\n{d}%", color: "#4E5969", fontSize: 12 },
+            labelLine: { length: 10, length2: 12 },
+            data: list.map(function (d) {
+                return { name: d.decoration || "未知", value: d.house_count || 0 };
+            }),
+        }];
+        return option;
+    }
+
+    // ----------------------------- c) 各户型平均单价 -----------------------------
+    function buildRoomOption(list) {
+        if (!list || !list.length) return null;
+        var names = list.map(function (d) { return (d.room_num == null ? "--" : d.room_num + "室"); });
+        var prices = list.map(function (d) { return d.avg_unit_price || 0; });
+
+        var option = baseChartOption();
+        option.grid = Object.assign({}, option.grid, { top: 44, bottom: 30 });
+        option.tooltip = Object.assign({}, option.tooltip, { trigger: "axis" });
+        option.xAxis = Object.assign({}, option.xAxis, { type: "category", data: names });
+        option.yAxis = Object.assign({}, option.yAxis, {
+            type: "value", name: "元/㎡", nameTextStyle: { color: "#86909C", fontSize: 12 },
+        });
+        option.series = [{
+            name: "平均单价", type: "bar", data: prices, barWidth: "46%",
+            itemStyle: { borderRadius: [6, 6, 0, 0],
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                    { offset: 0, color: "#165DFF" }, { offset: 1, color: "#94BFFF" }]) },
+            label: { show: true, position: "top", color: "#4E5969", fontSize: 12,
+                     formatter: function (p) { return fmtNumber(p.value, 0); } },
+        }];
+        return option;
+    }
+
+    // ----------------------------- d) TOP20 热门小区横向条形图 -----------------------------
+    function buildCommunityOption(list) {
+        if (!list || !list.length) return null;
+        // 先取挂牌量 TOP20，再按挂牌量升序（横向条形图最大值居顶）
+        var top20 = list.slice()
+            .sort(function (a, b) { return (b.house_count || 0) - (a.house_count || 0); })
+            .slice(0, 20);
+        top20.sort(function (a, b) { return (a.house_count || 0) - (b.house_count || 0); });
+
+        var names = top20.map(function (d) { return d.community || "--"; });
+        var counts = top20.map(function (d) { return d.house_count || 0; });
+
+        var option = baseChartOption();
+        option.grid = Object.assign({}, option.grid,
+            { left: 12, right: 60, top: 24, bottom: 24, containLabel: true });
+        option.tooltip = Object.assign({}, option.tooltip, {
+            trigger: "axis",
+            formatter: function (params) {
+                var p = params[0];
+                var item = top20[p.dataIndex] || {};
+                return '<div style="font-weight:600;margin-bottom:4px;">'
+                        + escapeHtml(item.community || "") + "</div>"
+                    + "区域：" + escapeHtml(item.district || "--") + "<br/>"
+                    + "挂牌量：" + fmtNumber(item.house_count) + " 套<br/>"
+                    + "平均单价：" + fmtUnitPrice(item.avg_unit_price) + "<br/>"
+                    + "平均总价：" + fmtPrice(item.avg_total_price);
+            },
+        });
+        option.xAxis = Object.assign({}, option.xAxis, {
+            type: "value",
+            splitLine: { show: true, lineStyle: { color: "#F2F3F5", type: "dashed" } },
+        });
+        option.yAxis = Object.assign({}, option.yAxis, {
+            type: "category", data: names, splitLine: { show: false },
+            axisLabel: { color: "#4E5969", fontSize: 12 },
+        });
+        option.series = [{
+            name: "挂牌量", type: "bar", data: counts, barWidth: "62%",
+            itemStyle: { borderRadius: [0, 6, 6, 0],
+                color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                    { offset: 0, color: "#94BFFF" }, { offset: 1, color: "#165DFF" }]) },
+            label: { show: true, position: "right", color: "#4E5969", fontSize: 12,
+                     formatter: function (p) { return fmtNumber(p.value); } },
+        }];
+        return option;
+    }
+
+    // ----------------------------- e) 房屋面积与总价散点分布 -----------------------------
+    function buildScatterOption(scatter) {
+        if (!scatter || !scatter.points || !scatter.points.length) return null;
+        var points = scatter.points;
+        var fit = scatter.fit || {};
+
+        var data = points.map(function (p) {
+            return [p.square, p.total_price, p.district, p.unit_price];
+        });
+
+        // 拟合直线：只覆盖面积的最小值 ~ 最大值区间
+        var xs = points.map(function (p) { return p.square; });
+        var minX = Math.min.apply(null, xs);
+        var maxX = Math.max.apply(null, xs);
+        var lineData = [
+            [minX, fit.slope * minX + fit.intercept],
+            [maxX, fit.slope * maxX + fit.intercept],
+        ];
+
+        var option = baseChartOption();
+        option.grid = Object.assign({}, option.grid,
+            { left: 60, right: 28, top: 34, bottom: 46 });
+        option.tooltip = Object.assign({}, option.tooltip, {
+            trigger: "item",
+            formatter: function (p) {
+                if (p.seriesName === "拟合趋势") return "";
+                var v = p.value || [];
+                return "面积：" + fmtArea(v[0]) + "<br/>"
+                    + "总价：" + fmtPrice(v[1]) + "<br/>"
+                    + "单价：" + fmtUnitPrice(v[3]) + "<br/>"
+                    + "区域：" + escapeHtml(v[2] || "--");
+            },
+        });
+        option.xAxis = Object.assign({}, option.xAxis, {
+            type: "value", name: "面积（㎡）", nameLocation: "middle", nameGap: 30,
+            nameTextStyle: { color: "#86909C", fontSize: 12 },
+            splitLine: { show: true, lineStyle: { color: "#F2F3F5", type: "dashed" } },
+        });
+        option.yAxis = Object.assign({}, option.yAxis, {
+            type: "value", name: "总价（万元）",
+            nameTextStyle: { color: "#86909C", fontSize: 12 },
+        });
+        option.series = [
+            { name: "房源", type: "scatter", data: data, symbolSize: 7,
+              itemStyle: { color: "rgba(22,93,255,0.40)" },
+              emphasis: { itemStyle: { color: "#165DFF" } } },
+            { name: "拟合趋势", type: "line", data: lineData, showSymbol: false,
+              silent: true, lineStyle: { width: 2, type: "dashed", color: "#FF7D00" } },
+        ];
+        return option;
+    }
+
+    // ----------------------------- f) 各特征相关性矩阵 -----------------------------
+    function buildCorrelationOption(corr) {
+        if (!corr || !corr.matrix || !corr.matrix.length) return null;
+        var labels = corr.labels || [];
+        var matrix = corr.matrix;
+
+        // 相关系数高（绝对值大）的格子用白色文字，保证可读
+        var data = [];
+        for (var i = 0; i < matrix.length; i++) {
+            for (var j = 0; j < matrix[i].length; j++) {
+                var value = Number(matrix[i][j]) || 0;
+                data.push({
+                    value: [j, i, value],
+                    label: { color: Math.abs(value) > 0.55 ? "#FFFFFF" : "#1D2129" },
+                });
+            }
+        }
+
+        var option = baseChartOption();
+        option.grid = Object.assign({}, option.grid,
+            { left: 74, right: 24, top: 30, bottom: 78, containLabel: false });
+        option.tooltip = Object.assign({}, option.tooltip, {
+            trigger: "item",
+            formatter: function (p) {
+                return escapeHtml(labels[p.value[1]]) + " ↔ " + escapeHtml(labels[p.value[0]])
+                    + "<br/>相关系数：" + p.value[2];
+            },
+        });
+        option.xAxis = Object.assign({}, option.xAxis, {
+            type: "category", data: labels,
+            axisLabel: { color: "#4E5969", fontSize: 12 },
+        });
+        option.yAxis = Object.assign({}, option.yAxis, {
+            type: "category", data: labels, splitLine: { show: false },
+            axisLabel: { color: "#4E5969", fontSize: 12 },
+        });
+        option.visualMap = {
+            min: -1, max: 1, calculable: true, orient: "horizontal",
+            left: "center", bottom: 4, itemWidth: 12, itemHeight: 100,
+            textStyle: { color: "#86909C", fontSize: 12 },
+            inRange: { color: ["#FCE4E2", "#FFFFFF", "#D6E4FF", "#165DFF"] },
+        };
+        option.series = [{
+            name: "相关系数", type: "heatmap", data: data,
+            label: { show: true, fontSize: 11,
+                     formatter: function (p) { return Number(p.value[2]).toFixed(2); } },
+            itemStyle: { borderColor: "#FFFFFF", borderWidth: 1, borderRadius: 4 },
+            emphasis: { itemStyle: { shadowBlur: 6, shadowColor: "rgba(29,33,41,0.18)" } },
+        }];
+        return option;
+    }
+
+    // ----------------------------- g) 随机森林特征重要性 -----------------------------
+    function buildImportanceOption(list) {
+        if (!list || !list.length) return null;
+        // 升序排列，横向条形图最大值居顶
+        var items = list.slice().sort(function (a, b) {
+            return (Number(a.importance) || 0) - (Number(b.importance) || 0);
+        });
+        var names = items.map(function (d) { return d.label || d.feature; });
+        var values = items.map(function (d) { return Number(d.importance) || 0; });
+
+        var option = baseChartOption();
+        option.grid = Object.assign({}, option.grid,
+            { left: 12, right: 72, top: 24, bottom: 24, containLabel: true });
+        option.tooltip = Object.assign({}, option.tooltip, {
+            trigger: "axis",
+            formatter: function (params) {
+                var p = params[0];
+                return escapeHtml(p.name) + "<br/>重要性占比："
+                    + (p.value * 100).toFixed(2) + "%";
+            },
+        });
+        option.xAxis = Object.assign({}, option.xAxis, {
+            type: "value",
+            axisLabel: { color: "#86909C", fontSize: 12,
+                         formatter: function (v) { return (v * 100).toFixed(0) + "%"; } },
+            splitLine: { show: true, lineStyle: { color: "#F2F3F5", type: "dashed" } },
+        });
+        option.yAxis = Object.assign({}, option.yAxis, {
+            type: "category", data: names, splitLine: { show: false },
+            axisLabel: { color: "#4E5969", fontSize: 12 },
+        });
+        option.series = [{
+            name: "重要性", type: "bar", data: values, barWidth: "56%",
+            itemStyle: { borderRadius: [0, 6, 6, 0],
+                color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
+                    { offset: 0, color: "#94BFFF" }, { offset: 1, color: "#165DFF" }]) },
+            label: { show: true, position: "right", color: "#4E5969", fontSize: 12,
+                     formatter: function (p) { return (p.value * 100).toFixed(2) + "%"; } },
+        }];
+        return option;
+    }
+
+    // ----------------------------- 主加载流程 -----------------------------
+    async function loadStats() {
+        showSkeletons();
+        var data;
+        try {
+            data = await apiFetch("/api/analysis/stats/");
+        } catch (e) {
+            showToast("数据加载失败：" + e.message, "error");
+            // 请求失败：各图表显示空状态
+            STATS_CHART_IDS.forEach(function (id) {
+                var box = $(id);
+                if (!box) return;
+                box.innerHTML = "";
+                var chart = initChart(box);
+                showChartEmpty(chart, "数据加载失败");
+                charts.push(chart);
+            });
+            return;
+        }
+
+        renderSummary(data.summary);
+        var districtChart = buildChart("chartDistrict", function () { return buildDistrictOption(data.district_stats); });
+        if (districtChart) {
+            // 悬停手型光标 + 点击柱子/折线点钻取到数据列表
+            districtChart.getZr().setCursorStyle("pointer");
+            districtChart.on("click", function (p) {
+                if (!p || !p.name) return;
+                window.location.href = "/data-list/?district=" + encodeURIComponent(p.name);
+            });
+        }
+        buildChart("chartDecoration", function () { return buildDecorationOption(data.decoration_stats); });
+        buildChart("chartRoom", function () { return buildRoomOption(data.room_stats); });
+        buildChart("chartCommunity", function () { return buildCommunityOption(data.community_top); });
+    }
+
+    // ----------------------------- 特征关系分析加载 -----------------------------
+    async function loadRelations() {
+        var data;
+        try {
+            data = await apiFetch("/api/analysis/relations/");
+        } catch (e) {
+            showToast("特征关系数据加载失败：" + e.message, "error");
+            RELATION_CHART_IDS.forEach(function (id) {
+                var box = $(id);
+                if (!box) return;
+                box.innerHTML = "";
+                var chart = initChart(box);
+                showChartEmpty(chart, "数据加载失败");
+                charts.push(chart);
+            });
+            return;
+        }
+
+        // 散点图标题右侧标注样本量与相关系数
+        var meta = $("scatterMeta");
+        if (meta) {
+            var fit = (data.scatter && data.scatter.fit) || {};
+            meta.textContent = "样本 " + fmtNumber(data.sample_size) + " / 共 "
+                + fmtNumber(data.total_houses) + " 条 · 相关系数 r = "
+                + (fit.r == null ? "--" : fit.r);
+        }
+
+        buildChart("chartScatter", function () { return buildScatterOption(data.scatter); });
+        buildChart("chartCorrelation", function () { return buildCorrelationOption(data.correlation); });
+        buildChart("chartImportance", function () { return buildImportanceOption(data.feature_importance); });
+    }
+
+    // ----------------------------- 自适应 resize -----------------------------
+    window.addEventListener("resize", debounce(function () {
+        charts.forEach(function (c) { if (c && !c.isDisposed()) c.resize(); });
+    }, 200));
+
+    // ----------------------------- 初始化 -----------------------------
+    document.addEventListener("DOMContentLoaded", function () {
+        loadStats();
+        loadRelations();
+    });
+})();
+</script>
+{% endblock %}

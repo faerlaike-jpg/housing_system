@@ -1,0 +1,696 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}房源详情 · 潍坊市二手房房价预测系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 顶部返回条 */
+    .detail-topbar {
+        display: flex; flex-wrap: wrap; align-items: center;
+        justify-content: space-between; gap: 12px;
+    }
+    .detail-topbar .topbar-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+    /* 主信息标题与标签 */
+    .detail-title { font-size: 22px; font-weight: 700; line-height: 1.4; color: var(--text-1); word-break: break-word; }
+    .detail-tags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+    /* 价格区 */
+    .price-main { font-size: 32px; font-weight: 700; color: var(--primary); line-height: 1.15; }
+    /* 性价比分析行 */
+    .val-row {
+        display: flex; align-items: baseline; justify-content: space-between;
+        gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--border);
+    }
+    .val-row:last-of-type { border-bottom: none; }
+    .val-label { font-size: 13px; color: var(--text-3); white-space: nowrap; }
+    .val-value { font-size: 14px; color: var(--text-1); text-align: right; }
+    .price-unit { font-size: 15px; color: var(--text-3); font-weight: 500; }
+
+    /* 收藏按钮 */
+    .fav-btn { min-width: 108px; }
+
+    /* 属性明细：两列网格（PC），移动端一列 */
+    .attr-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px 18px;
+    }
+    .attr-row {
+        display: flex; align-items: baseline; gap: 8px;
+        padding: 8px 12px; border-radius: var(--radius-sm);
+        background: #FAFBFC; min-width: 0;
+    }
+    .attr-row .a-label { flex-shrink: 0; font-size: 13px; color: var(--text-3); min-width: 64px; }
+    .attr-row .a-value { font-size: 14px; color: var(--text-1); font-weight: 500; word-break: break-all; }
+
+    /* 与同类房源对比条 */
+    .cmp-item { margin-bottom: 16px; }
+    .cmp-head {
+        display: flex; align-items: baseline; justify-content: space-between;
+        gap: 8px; font-size: 13px; color: var(--text-3); margin-bottom: 6px;
+    }
+    .cmp-head .cmp-val { font-size: 14px; font-weight: 600; color: var(--text-1); }
+    .cmp-track { height: 10px; border-radius: 999px; background: #F2F3F5; overflow: hidden; }
+    .cmp-fill { height: 100%; border-radius: 999px; transition: width .5s ease; }
+
+    /* 偏离度双向条（以同类均价为 0 点） */
+    .dev-track {
+        position: relative; height: 12px; border-radius: 999px;
+        background: #F2F3F5; margin: 10px 0 6px;
+    }
+    .dev-fill { position: absolute; top: 0; height: 100%; border-radius: 999px; }
+    .dev-center {
+        position: absolute; left: 50%; top: -3px; width: 2px; height: 18px;
+        background: var(--border); transform: translateX(-50%);
+    }
+    .dev-scale {
+        display: flex; justify-content: space-between;
+        font-size: 12px; color: var(--text-3);
+    }
+
+    /* 同区域推荐卡片 */
+    .rec-card {
+        height: 100%; display: flex; flex-direction: column;
+        cursor: pointer; color: inherit;
+    }
+    .rec-title {
+        font-size: 14px; font-weight: 600; color: var(--text-1); line-height: 1.4; margin-bottom: 8px;
+        display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+    .rec-meta { font-size: 13px; color: var(--text-3); margin-bottom: 3px; }
+    .rec-price-row {
+        display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
+        margin-top: auto; padding-top: 10px;
+    }
+
+    @media (max-width: 575.98px) {
+        .attr-grid { grid-template-columns: 1fr; }
+        .detail-title { font-size: 19px; }
+        .price-main { font-size: 26px; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- ============================ 顶部返回条 ============================ -->
+<div class="app-card mb-3 fade-up">
+    <div class="detail-topbar">
+        <a class="btn btn-outline-soft" href="{% url 'data_list_page' %}">
+            <i class="bi bi-arrow-left me-1"></i>返回数据列表
+        </a>
+        <div class="topbar-actions">
+            <a class="btn btn-soft" id="btnAddCompare" href="javascript:void(0)">
+                <i class="bi bi-columns-gap me-1"></i>加入对比
+            </a>
+        </div>
+    </div>
+</div>
+
+<!-- ============================ 详情主体（加载成功后展示） ============================ -->
+<div id="detailWrap">
+
+    <!-- 主信息卡片 -->
+    <div class="app-card mb-3 fade-up" id="detailCard">
+        <div id="detailBody">
+            <!-- 骨架屏 -->
+            <div class="d-flex flex-wrap justify-content-between gap-3">
+                <div style="flex:1 1 300px;min-width:0;">
+                    <div class="skeleton skeleton-line" style="width:60%;height:22px;"></div>
+                    <div class="skeleton skeleton-line" style="width:42%;"></div>
+                    <div class="skeleton" style="width:34%;height:34px;border-radius:8px;margin-top:8px;"></div>
+                    <div class="skeleton skeleton-line" style="width:52%;margin-top:16px;"></div>
+                </div>
+                <div style="flex:0 0 auto;">
+                    <div class="skeleton" style="width:108px;height:38px;border-radius:8px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 属性明细卡片 -->
+    <div class="app-card mb-3 fade-up" id="attrCard">
+        <div class="card-title-line"><i class="bi bi-list-ul"></i>房源属性明细</div>
+        <div class="attr-grid" id="attrGrid">
+            <div><div class="skeleton skeleton-line" style="width:80%;"></div></div>
+            <div><div class="skeleton skeleton-line" style="width:75%;"></div></div>
+            <div><div class="skeleton skeleton-line" style="width:70%;"></div></div>
+            <div><div class="skeleton skeleton-line" style="width:85%;"></div></div>
+            <div><div class="skeleton skeleton-line" style="width:65%;"></div></div>
+            <div><div class="skeleton skeleton-line" style="width:78%;"></div></div>
+            <div><div class="skeleton skeleton-line" style="width:72%;"></div></div>
+            <div><div class="skeleton skeleton-line" style="width:82%;"></div></div>
+        </div>
+    </div>
+
+    <!-- 性价比分析卡片 -->
+    <div class="app-card mb-3 fade-up" id="valuationCard">
+        <div class="card-title-line">
+            <i class="bi bi-graph-up-arrow"></i>性价比分析
+            <span class="status-tag tag-grey ms-auto" id="valuationTag">--</span>
+        </div>
+        <div id="valuationWrap">
+            <div class="skeleton skeleton-line" style="width:60%;"></div>
+            <div class="skeleton skeleton-line" style="width:45%;"></div>
+            <div class="skeleton skeleton-line" style="width:52%;"></div>
+        </div>
+    </div>
+
+    <!-- 市场价位定位卡片 -->
+    <div class="app-card mb-3 fade-up" id="positionCard">
+        <div class="card-title-line">
+            <i class="bi bi-crosshair"></i>市场价位定位
+            <span class="status-tag tag-grey ms-auto" id="positionTag">--</span>
+        </div>
+        <div class="row g-3 align-items-center">
+            <div class="col-12 col-lg-7">
+                <div class="chart-box" id="posChart" style="height:320px;"></div>
+            </div>
+            <div class="col-12 col-lg-5" id="posCompare">
+                <div class="skeleton skeleton-line" style="width:70%;"></div>
+                <div class="skeleton skeleton-line" style="width:50%;"></div>
+                <div class="skeleton skeleton-line" style="width:60%;"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 同区域推荐房源 -->
+    <div class="app-card fade-up" id="recCard">
+        <div class="card-title-line"><i class="bi bi-houses"></i>同区域推荐房源</div>
+        <div class="row g-3" id="recRow">
+            <div class="col-12 col-sm-6 col-lg-3">
+                <div class="app-card rec-card">
+                    <div class="skeleton skeleton-line" style="width:80%;height:16px;"></div>
+                    <div class="skeleton skeleton-line" style="width:55%;"></div>
+                    <div class="skeleton skeleton-line" style="width:65%;"></div>
+                    <div class="skeleton skeleton-line" style="width:70%;margin-top:12px;"></div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-lg-3">
+                <div class="app-card rec-card">
+                    <div class="skeleton skeleton-line" style="width:80%;height:16px;"></div>
+                    <div class="skeleton skeleton-line" style="width:55%;"></div>
+                    <div class="skeleton skeleton-line" style="width:65%;"></div>
+                    <div class="skeleton skeleton-line" style="width:70%;margin-top:12px;"></div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-lg-3">
+                <div class="app-card rec-card">
+                    <div class="skeleton skeleton-line" style="width:80%;height:16px;"></div>
+                    <div class="skeleton skeleton-line" style="width:55%;"></div>
+                    <div class="skeleton skeleton-line" style="width:65%;"></div>
+                    <div class="skeleton skeleton-line" style="width:70%;margin-top:12px;"></div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-lg-3">
+                <div class="app-card rec-card">
+                    <div class="skeleton skeleton-line" style="width:80%;height:16px;"></div>
+                    <div class="skeleton skeleton-line" style="width:55%;"></div>
+                    <div class="skeleton skeleton-line" style="width:65%;"></div>
+                    <div class="skeleton skeleton-line" style="width:70%;margin-top:12px;"></div>
+                </div>
+            </div>
+        </div>
+        <div id="recEmpty"></div>
+    </div>
+</div>
+
+<!-- ============================ 错误 / 不存在空状态 ============================ -->
+<div class="app-card fade-up d-none" id="errorCard">
+    <div id="errorBox"></div>
+    <div class="text-center pb-4">
+        <a class="btn btn-brand" href="{% url 'data_list_page' %}">
+            <i class="bi bi-table me-1"></i>返回数据列表
+        </a>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    "use strict";
+
+    // ----------------------------- 解析房源 id -----------------------------
+    var match = window.location.pathname.match(/\/house\/(\d+)\/?/);
+    var houseId = match ? Number(match[1]) : null;
+
+    var LOGIN_URL = "{% url 'login_page' %}";
+
+    // ----------------------------- DOM 引用 -----------------------------
+    var $ = function (id) { return document.getElementById(id); };
+    var elDetailWrap = $("detailWrap");
+    var elDetailBody = $("detailBody");
+    var elAttrGrid = $("attrGrid");
+    var elValuationWrap = $("valuationWrap");
+    var elRecRow = $("recRow");
+    var elRecEmpty = $("recEmpty");
+    var elErrorCard = $("errorCard");
+
+    var favLoading = false;
+
+    // ----------------------------- 标签渲染工具 -----------------------------
+    function decorationClass(value) {
+        if (value === "精装") return "tag-primary";
+        if (value === "简装") return "tag-cyan";
+        if (value === "毛坯") return "tag-grey";
+        return "tag-warning";
+    }
+
+    function decorationTag(value) {
+        if (!value) return '<span class="text-muted-2">--</span>';
+        return '<span class="status-tag ' + decorationClass(value) + '">' + escapeHtml(value) + "</span>";
+    }
+
+    function elevatorTag(value) {
+        var v = String(value == null ? "" : value);
+        var yes = (v === "有" || v === "true" || v === "1" || v === "yes" || v === "是");
+        var no = (v === "无" || v === "false" || v === "0" || v === "no" || v === "否");
+        if (yes) return '<span class="status-tag tag-success">有</span>';
+        if (no) return '<span class="status-tag tag-danger">无</span>';
+        return '<span class="text-muted-2">--</span>';
+    }
+
+    function plain(value) {
+        if (value === null || value === undefined || value === "") return '<span class="text-muted-2">--</span>';
+        return escapeHtml(value);
+    }
+
+    function plainUnit(value, unit) {
+        if (value === null || value === undefined || value === "") return '<span class="text-muted-2">--</span>';
+        return escapeHtml(value) + escapeHtml(unit);
+    }
+
+    function sizeText(h) {
+        if (h.size) return escapeHtml(h.size);
+        var room = (h.room_num !== null && h.room_num !== undefined && h.room_num !== "") ? h.room_num + "室" : "";
+        var hall = (h.hall_num !== null && h.hall_num !== undefined && h.hall_num !== "") ? h.hall_num + "厅" : "";
+        var txt = room + hall;
+        return txt || '<span class="text-muted-2">--</span>';
+    }
+
+    // ----------------------------- 渲染主信息卡片 -----------------------------
+    function renderDetail(h) {
+        var fav = !!h.favorited;
+
+        var html = ""
+            + '<div class="d-flex flex-wrap justify-content-between align-items-start gap-3">'
+            +   '<div style="flex:1 1 320px;min-width:0;">'
+            +     '<h1 class="detail-title mb-2">' + escapeHtml(h.title) + "</h1>"
+            +     '<div class="detail-tags">'
+            +       (h.district ? '<span class="status-tag tag-primary"><i class="bi bi-geo-alt"></i>' + escapeHtml(h.district) + "</span>" : "")
+            +       (h.community ? '<span class="status-tag tag-cyan"><i class="bi bi-house"></i>' + escapeHtml(h.community) + "</span>" : "")
+            +       decorationTag(h.decoration)
+            +       elevatorTag(h.elevator)
+            +     "</div>"
+            +     '<div class="d-flex flex-wrap align-items-baseline gap-3 mt-3">'
+            +       '<div class="price-main">' + escapeHtml(fmtPrice(h.total_price)) + "</div>"
+            +       '<div class="price-unit">' + escapeHtml(fmtUnitPrice(h.unit_price)) + "</div>"
+            +     "</div>"
+            +     '<div class="text-muted-2 mt-1" style="font-size:12px;">预测总价 · 预测单价</div>'
+            +   "</div>"
+            +   '<div class="flex-shrink-0 text-end">'
+            +     '<button type="button" class="' + (fav ? "btn btn-soft fav-btn" : "btn btn-outline-soft fav-btn") + '" id="btnFavorite" aria-pressed="' + (fav ? "true" : "false") + '">'
+            +       '<i class="bi ' + (fav ? "bi-star-fill" : "bi-star") + ' me-1"></i><span id="favText">' + (fav ? "已收藏" : "收藏") + "</span>"
+            +     "</button>"
+            +     '<div class="text-muted-2 mt-1 d-none" id="favLoginHint" style="font-size:12px;">'
+            +       '<a class="text-primary" href="' + LOGIN_URL + '">去登录</a> 后可收藏房源'
+            +     "</div>"
+            +   "</div>"
+            + "</div>";
+
+        elDetailBody.innerHTML = html;
+        $("btnFavorite").addEventListener("click", toggleFavorite);
+    }
+
+    function setFavUI(fav) {
+        var btn = $("btnFavorite");
+        if (!btn) return;
+        btn.className = fav ? "btn btn-soft fav-btn" : "btn btn-outline-soft fav-btn";
+        btn.setAttribute("aria-pressed", fav ? "true" : "false");
+        var icon = btn.querySelector("i");
+        if (icon) icon.className = "bi " + (fav ? "bi-star-fill" : "bi-star") + " me-1";
+        var text = $("favText");
+        if (text) text.textContent = fav ? "已收藏" : "收藏";
+    }
+
+    function showLoginHint() {
+        var el = $("favLoginHint");
+        if (el) el.classList.remove("d-none");
+    }
+
+    // ----------------------------- 收藏切换 -----------------------------
+    async function toggleFavorite() {
+        if (favLoading) return;
+        var btn = $("btnFavorite");
+        favLoading = true;
+        if (btn) btn.disabled = true;
+        try {
+            var data = await apiFetch("/api/house/favorite/", {
+                method: "POST",
+                body: { house_id: houseId }
+            });
+            var fav = !!(data && data.favorited);
+            setFavUI(fav);
+            showToast(fav ? "已加入收藏" : "已取消收藏", fav ? "success" : "info");
+            var hint = $("favLoginHint");
+            if (hint) hint.classList.add("d-none");
+        } catch (e) {
+            if (/401|登录/.test(e.message || "")) {
+                showToast("请先登录后再收藏房源", "warning");
+                showLoginHint();
+            } else {
+                showToast(e.message || "操作失败，请稍后重试", "error");
+            }
+        } finally {
+            favLoading = false;
+            var b = $("btnFavorite");
+            if (b) b.disabled = false;
+        }
+    }
+
+    // ----------------------------- 渲染属性明细 -----------------------------
+    function renderAttrs(h) {
+        var rows = [
+            { label: "建筑面积", value: escapeHtml(fmtArea(h.square)) },
+            { label: "户型", value: sizeText(h) },
+            { label: "室数", value: plainUnit(h.room_num, "室") },
+            { label: "厅数", value: plainUnit(h.hall_num, "厅") },
+            { label: "楼层", value: plain(h.floor) },
+            { label: "楼层位置", value: plain(h.floor_type) },
+            { label: "总楼层", value: plainUnit(h.total_floors, "层") },
+            { label: "朝向", value: plain(h.direction) },
+            { label: "建筑类型", value: plain(h.type) },
+            { label: "所属区域", value: plain(h.district) },
+            { label: "附近商圈", value: plain(h.nearby) },
+            { label: "小区名称", value: plain(h.community) },
+            { label: "装修情况", value: decorationTag(h.decoration) },
+            { label: "有无电梯", value: elevatorTag(h.elevator) },
+            { label: "梯户比例", value: plain(h.elevator_num) },
+            { label: "产权性质", value: plain(h.ownership) }
+        ];
+
+        var html = "";
+        rows.forEach(function (r) {
+            html += '<div class="attr-row">'
+                  +   '<span class="a-label">' + escapeHtml(r.label) + "</span>"
+                  +   '<span class="a-value">' + r.value + "</span>"
+                  + "</div>";
+        });
+        elAttrGrid.innerHTML = html;
+    }
+
+    // ----------------------------- 渲染性价比分析 -----------------------------
+    function renderValuation(h) {
+        var v = h.valuation;
+        var tagEl = $("valuationTag");
+
+        if (!v) {
+            elValuationWrap.innerHTML =
+                '<div class="text-muted-2" style="font-size:13px;">该房源暂无估值数据。</div>';
+            if (tagEl) tagEl.className = "status-tag tag-grey ms-auto";
+            return;
+        }
+
+        if (tagEl) {
+            tagEl.className = "status-tag tag-" + (v.level_tag || "grey") + " ms-auto";
+            tagEl.textContent = v.level_label || "--";
+        }
+
+        // 主指标：相对同类房源均价的偏离（负=便宜）
+        var peerPct = v.peer_deviation_pct;
+        var peerText = "--";
+        var peerColor = "var(--text-2)";
+        if (peerPct !== null && peerPct !== undefined) {
+            peerText = (peerPct > 0 ? "高于" : "低于") + "同类均价 "
+                + fmtNumber(Math.abs(peerPct), 2) + "%";
+            peerColor = peerPct <= -8 ? "var(--success)"
+                : (peerPct >= 8 ? "var(--danger)" : "var(--text-1)");
+        }
+
+        // 辅助指标：相对模型估值的偏离
+        var devPct = v.deviation_pct;
+        var devText = "--";
+        if (devPct !== null && devPct !== undefined) {
+            devText = (devPct > 0 ? "高于" : "低于") + "模型估值 "
+                + fmtNumber(Math.abs(devPct), 2) + "%";
+        }
+
+        elValuationWrap.innerHTML = ""
+            + '<div class="val-row"><span class="val-label">模型预测价（随机森林）</span>'
+            +   '<span class="val-value">' + escapeHtml(fmtPrice(v.predicted_total_price))
+            +   '<span class="text-muted-2" style="font-size:12px;margin-left:6px;">'
+            +     escapeHtml(fmtUnitPrice(v.predicted_unit_price)) + "</span></span></div>"
+            + '<div class="val-row"><span class="val-label">实际挂牌价</span>'
+            +   '<span class="val-value">' + escapeHtml(fmtPrice(v.actual_total_price)) + "</span></div>"
+            + '<div class="val-row"><span class="val-label">同区域同户型均价</span>'
+            +   '<span class="val-value">' + escapeHtml(fmtUnitPrice(v.peer_unit_price)) + "</span></div>"
+            + '<div class="val-row"><span class="val-label">相比同类房源</span>'
+            +   '<span class="val-value" style="color:' + peerColor + ';font-weight:600;">'
+            +     peerText + "</span></div>"
+            + '<div class="val-row"><span class="val-label">相比模型估值</span>'
+            +   '<span class="val-value text-muted-2">' + devText + "</span></div>"
+            + '<div class="text-muted-2" style="font-size:12px;margin-top:10px;line-height:1.7;">'
+            +   "比价基准为「同区域 + 同户型平均单价」，模型估值作为交叉参考。"
+            +   "估值由随机森林模型批量计算（测试集 R² = 0.83），仅供参考，不构成交易建议。"
+            + "</div>";
+    }
+
+    // ----------------------------- 市场价位定位：右侧对比条 -----------------------------
+    function cmpRow(label, value, maxVal, color) {
+        var w = Math.max(2, Math.round(value / maxVal * 100));
+        return '<div class="cmp-item">'
+            +   '<div class="cmp-head"><span>' + escapeHtml(label) + "</span>"
+            +     '<span class="cmp-val">' + escapeHtml(fmtUnitPrice(value)) + "</span></div>"
+            +   '<div class="cmp-track"><div class="cmp-fill" style="width:' + w
+            +     "%;background:" + color + ';"></div></div>'
+            + "</div>";
+    }
+
+    function deviationBlock(pct) {
+        var LIM = 30;                                   // 双向条两端代表 ±30%
+        var v = Math.max(-LIM, Math.min(LIM, pct));
+        var w = Math.abs(v) / LIM * 50;                 // 占整条宽度的百分比
+        var left = v >= 0 ? 50 : 50 - w;
+        var color = v <= -8 ? "var(--success)" : (v >= 8 ? "var(--danger)" : "var(--primary)");
+        return '<div class="cmp-item">'
+            +   '<div class="cmp-head"><span>相比同类房源均价</span>'
+            +     '<span class="cmp-val" style="color:' + color + ';">'
+            +     escapeHtml((pct > 0 ? "高于 " : "低于 ") + fmtNumber(Math.abs(pct), 2) + "%")
+            +     "</span></div>"
+            +   '<div class="dev-track">'
+            +     '<div class="dev-fill" style="left:' + left + "%;width:" + w
+            +       "%;background:" + color + ';"></div>'
+            +     '<div class="dev-center"></div>'
+            +   "</div>"
+            +   '<div class="dev-scale"><span>-30%</span><span>同类均价</span><span>+30%</span></div>'
+            + "</div>";
+    }
+
+    function renderCompare(h) {
+        var v = h.valuation || null;
+        var box = $("posCompare");
+
+        var peerUnit = (v && v.peer_unit_price !== null && v.peer_unit_price !== undefined)
+            ? Number(v.peer_unit_price) : null;
+        var ownUnit = (h.unit_price !== null && h.unit_price !== undefined)
+            ? Number(h.unit_price) : null;
+
+        if (peerUnit === null && ownUnit === null) {
+            renderEmpty(box, "暂无同类比价数据", "bi-bar-chart");
+            return;
+        }
+
+        var maxVal = Math.max(peerUnit || 0, ownUnit || 0) || 1;
+        var html = "";
+        if (peerUnit !== null) html += cmpRow("同区域同户型均价", peerUnit, maxVal, "var(--secondary)");
+        if (ownUnit !== null) html += cmpRow("本房源单价", ownUnit, maxVal, "var(--primary)");
+
+        var pct = (v && v.peer_deviation_pct !== null && v.peer_deviation_pct !== undefined)
+            ? Number(v.peer_deviation_pct) : null;
+        if (pct !== null) {
+            html += deviationBlock(pct);
+        } else {
+            html += '<div class="text-muted-2" style="font-size:12px;">同类比价数据不足，无法计算偏离度。</div>';
+        }
+        box.innerHTML = html;
+    }
+
+    // ----------------------------- 市场价位定位：左侧散点图 -----------------------------
+    var posChart = null;
+
+    function renderPosition(data) {
+        var tagEl = $("positionTag");
+        var box = $("posChart");
+        if (posChart) { posChart.dispose(); posChart = null; }
+
+        if (!data || !data.points || !data.points.length) {
+            if (tagEl) tagEl.textContent = "暂无数据";
+            posChart = echarts.init(box);
+            showChartEmpty(posChart, "该区域暂无足够的分布数据");
+            return;
+        }
+        if (tagEl) {
+            tagEl.textContent = (data.district || "") + " · 共 " + fmtNumber(data.total, 0) + " 套";
+        }
+
+        var series = [{
+            name: "同区域房源",
+            type: "scatter",
+            symbolSize: 7,
+            itemStyle: { color: "#165DFF", opacity: 0.35 },
+            data: data.points.map(function (p) { return [p.square, p.total_price]; })
+        }];
+
+        if (data.fit) {
+            var xs = data.points.map(function (p) { return p.square; });
+            var minX = Math.min.apply(null, xs);
+            var maxX = Math.max.apply(null, xs);
+            var f = data.fit;
+            series.push({
+                name: "区域趋势线",
+                type: "line",
+                showSymbol: false,
+                silent: true,
+                lineStyle: { type: "dashed", width: 2, color: "#36CFC9" },
+                data: [
+                    [minX, f.slope * minX + f.intercept],
+                    [maxX, f.slope * maxX + f.intercept]
+                ]
+            });
+        }
+
+        if (data.house) {
+            series.push({
+                name: "本房源",
+                type: "scatter",
+                symbolSize: 18,
+                itemStyle: { color: "#F53F3F", borderColor: "#FFFFFF", borderWidth: 2 },
+                label: {
+                    show: true, position: "top", formatter: "本房源",
+                    color: "#1D2129", fontSize: 12, fontWeight: 600
+                },
+                data: [[data.house.square, data.house.total_price]]
+            });
+        }
+
+        var option = baseChartOption({
+            grid: { left: 8, right: 28, top: 56, bottom: 8, containLabel: true },
+            xAxis: { type: "value", name: "面积(㎡)",
+                     nameTextStyle: { color: "#86909C", fontSize: 12 } },
+            yAxis: { type: "value", name: "总价(万元)",
+                     nameTextStyle: { color: "#86909C", fontSize: 12 } },
+            series: series
+        });
+        // 散点图用 item 触发更贴合，覆盖默认的 axis 触发
+        option.tooltip = Object.assign({}, option.tooltip, {
+            trigger: "item",
+            formatter: function (p) {
+                return escapeHtml(p.seriesName) + "<br/>面积 "
+                    + fmtNumber(p.value[0], 1) + " ㎡<br/>总价 "
+                    + fmtNumber(p.value[1], 1) + " 万元";
+            }
+        });
+
+        posChart = echarts.init(box);
+        posChart.setOption(option, true);
+    }
+
+    async function loadPosition() {
+        try {
+            var data = await apiFetch("/api/house/position/", { params: { id: houseId } });
+            renderPosition(data);
+        } catch (e) {
+            renderPosition(null);
+        }
+    }
+
+    // ----------------------------- 渲染同区域推荐 -----------------------------
+    function renderRecommendations(list, currentId) {
+        var items = (list || []).filter(function (h) { return Number(h.id) !== Number(currentId); });
+
+        if (!items.length) {
+            elRecRow.innerHTML = "";
+            renderEmpty(elRecEmpty, "暂无同区域推荐房源", "bi-inbox");
+            return;
+        }
+        elRecEmpty.innerHTML = "";
+
+        var html = "";
+        items.forEach(function (h) {
+            html += '<div class="col-12 col-sm-6 col-lg-3">'
+                  +   '<a class="app-card hoverable rec-card fade-up" href="/house/' + escapeHtml(h.id) + '/">'
+                  +     '<div class="rec-title" title="' + escapeHtml(h.title) + '">' + escapeHtml(h.title) + "</div>"
+                  +     '<div class="rec-meta"><i class="bi bi-house me-1"></i>' + plain(h.community) + "</div>"
+                  +     '<div class="rec-meta"><i class="bi bi-rulers me-1"></i>' + escapeHtml(fmtArea(h.square)) + "</div>"
+                  +     '<div class="rec-meta"><i class="bi bi-grid me-1"></i>' + sizeText(h) + "</div>"
+                  +     '<div class="rec-price-row">'
+                  +       '<span class="status-tag tag-primary">' + escapeHtml(fmtPrice(h.total_price)) + "</span>"
+                  +       '<span class="status-tag tag-cyan">' + escapeHtml(fmtUnitPrice(h.unit_price)) + "</span>"
+                  +     "</div>"
+                  +   "</a>"
+                  + "</div>";
+        });
+        elRecRow.innerHTML = html;
+    }
+
+    async function loadRecommendations(district, currentId) {
+        if (!district) {
+            elRecRow.innerHTML = "";
+            renderEmpty(elRecEmpty, "暂无同区域推荐房源", "bi-inbox");
+            return;
+        }
+        try {
+            var data = await apiFetch("/api/house/list/", {
+                params: { district: district, page: 1, page_size: 4 }
+            });
+            renderRecommendations((data && data.list) || [], currentId);
+        } catch (e) {
+            elRecRow.innerHTML = "";
+            renderEmpty(elRecEmpty, "推荐房源加载失败，请稍后重试", "bi-exclamation-triangle");
+        }
+    }
+
+    // ----------------------------- 空 / 错误状态 -----------------------------
+    function showError(message) {
+        elDetailWrap.classList.add("d-none");
+        elErrorCard.classList.remove("d-none");
+        renderEmpty("#errorBox", message || "房源不存在或已下架", "bi-exclamation-triangle");
+    }
+
+    // ----------------------------- 主加载 -----------------------------
+    async function loadDetail() {
+        if (houseId === null) {
+            showError("房源编号无效，请返回数据列表重新选择");
+            return;
+        }
+
+        // 「加入对比」按钮指向当前房源
+        var compareBtn = $("btnAddCompare");
+        if (compareBtn) compareBtn.setAttribute("href", "/compare/?ids=" + houseId);
+
+        try {
+            var h = await apiFetch("/api/house/detail/", { params: { id: houseId } });
+            renderDetail(h);
+            renderAttrs(h);
+            renderValuation(h);
+            renderCompare(h);          // 右侧对比条：直接用详情自带的估值数据
+            loadPosition();            // 左侧散点：单独请求同区域分布
+            loadRecommendations(h.district, houseId);
+        } catch (e) {
+            showError(e.message);
+        }
+    }
+
+    // ----------------------------- 初始化 -----------------------------
+    document.addEventListener("DOMContentLoaded", function () {
+        loadDetail();
+    });
+
+    window.addEventListener("resize", function () {
+        if (posChart) posChart.resize();
+    });
+})();
+</script>
+{% endblock %}

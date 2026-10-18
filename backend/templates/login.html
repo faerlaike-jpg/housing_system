@@ -1,0 +1,297 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}登录 / 注册 · 潍坊市二手房房价预测系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ===== 登录页专属样式：居中卡片 + 选项卡滑动下划线 ===== */
+    .auth-wrap {
+        min-height: calc(100vh - 280px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px 0;
+    }
+    .auth-card { width: 100%; max-width: 440px; padding: 30px 30px 24px; }
+
+    /* 品牌区 */
+    .auth-brand { text-align: center; margin-bottom: 22px; }
+    .auth-brand .logo-mark {
+        width: 52px; height: 52px; border-radius: 14px; font-size: 26px;
+        display: grid; place-items: center; margin: 0 auto 12px;
+        background: linear-gradient(135deg, var(--primary), var(--secondary));
+        color: #fff; box-shadow: 0 8px 18px rgba(22, 93, 255, .3);
+    }
+    .auth-brand h1 { font-size: 20px; font-weight: 700; margin: 0; }
+    .auth-brand p { font-size: 13px; color: var(--text-3); margin: 6px 0 0; }
+
+    /* 选项卡 */
+    .auth-tabs {
+        position: relative; display: flex;
+        border-bottom: 1px solid var(--border); margin-bottom: 22px;
+    }
+    .auth-tab {
+        flex: 1; border: none; background: transparent; padding: 10px 0;
+        font-size: 15px; font-weight: 500; color: var(--text-3);
+        cursor: pointer; transition: color .25s ease;
+    }
+    .auth-tab.active { color: var(--primary); font-weight: 600; }
+    .auth-tab-indicator {
+        position: absolute; left: 0; bottom: -1px; width: 50%; height: 2px;
+        background: var(--primary); border-radius: 2px;
+        transition: transform .3s cubic-bezier(.4, 0, .2, 1);
+    }
+    .auth-tab-indicator.right { transform: translateX(100%); }
+
+    /* 面板切换淡入 */
+    .auth-panel { display: none; }
+    .auth-panel.active { display: block; animation: page-fade-in .35s ease both; }
+
+    /* 密码可见切换按钮 */
+    .pwd-wrap { position: relative; }
+    .pwd-wrap .form-control { padding-right: 42px; }
+    .pwd-toggle {
+        position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+        border: none; background: transparent; color: var(--text-3);
+        width: 30px; height: 30px; display: grid; place-items: center;
+        cursor: pointer; border-radius: 6px;
+    }
+    .pwd-toggle:hover { color: var(--primary); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+    <div class="app-card auth-card fade-up">
+
+        <!-- 品牌头部 -->
+        <div class="auth-brand">
+            <div class="logo-mark"><i class="bi bi-buildings"></i></div>
+            <h1>潍坊市二手房房价预测系统</h1>
+            <p>登录后可使用房价预测、房源对比等完整功能</p>
+        </div>
+
+        <!-- 选项卡：登录 / 注册 -->
+        <div class="auth-tabs" role="tablist">
+            <button type="button" class="auth-tab active" data-tab="login">登录</button>
+            <button type="button" class="auth-tab" data-tab="register">注册</button>
+            <span class="auth-tab-indicator" id="authIndicator"></span>
+        </div>
+
+        <!-- ==================== 登录面板 ==================== -->
+        <div class="auth-panel active" id="loginPanel">
+            <form id="loginForm" novalidate>
+                <div class="mb-3">
+                    <label class="form-label" for="loginUsername">用户名</label>
+                    <input type="text" class="form-control" id="loginUsername"
+                           placeholder="请输入用户名" autocomplete="username">
+                    <div class="invalid-feedback"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="loginPassword">密码</label>
+                    <div class="pwd-wrap">
+                        <input type="password" class="form-control" id="loginPassword"
+                               placeholder="请输入密码" autocomplete="current-password">
+                        <button type="button" class="pwd-toggle" data-target="loginPassword"
+                                aria-label="显示/隐藏密码"><i class="bi bi-eye"></i></button>
+                        <div class="invalid-feedback"></div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-gradient w-100 py-2" id="loginSubmit">
+                    <i class="bi bi-box-arrow-in-right me-1"></i>登录
+                </button>
+            </form>
+        </div>
+
+        <!-- ==================== 注册面板 ==================== -->
+        <div class="auth-panel" id="registerPanel">
+            <form id="registerForm" novalidate>
+                <div class="mb-3">
+                    <label class="form-label" for="regUsername">用户名</label>
+                    <input type="text" class="form-control" id="regUsername"
+                           placeholder="至少 3 位，用于登录" autocomplete="username">
+                    <div class="invalid-feedback"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="regEmail">邮箱</label>
+                    <input type="email" class="form-control" id="regEmail"
+                           placeholder="请输入邮箱" autocomplete="email">
+                    <div class="invalid-feedback"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="regPhone">手机号 <span class="text-muted-2">(选填)</span></label>
+                    <input type="text" class="form-control" id="regPhone"
+                           placeholder="请输入 11 位手机号" maxlength="11" autocomplete="tel">
+                    <div class="invalid-feedback"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="regPassword">密码</label>
+                    <div class="pwd-wrap">
+                        <input type="password" class="form-control" id="regPassword"
+                               placeholder="至少 6 位" autocomplete="new-password">
+                        <button type="button" class="pwd-toggle" data-target="regPassword"
+                                aria-label="显示/隐藏密码"><i class="bi bi-eye"></i></button>
+                        <div class="invalid-feedback"></div>
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="regConfirm">确认密码</label>
+                    <input type="password" class="form-control" id="regConfirm"
+                           placeholder="请再次输入密码" autocomplete="new-password">
+                    <div class="invalid-feedback"></div>
+                </div>
+                <button type="submit" class="btn btn-gradient w-100 py-2" id="registerSubmit">
+                    <i class="bi bi-person-plus me-1"></i>注册
+                </button>
+            </form>
+        </div>
+
+        <!-- 演示账号提示 -->
+        <div class="text-center text-muted-2 mt-3" style="font-size: 12px;">
+            <i class="bi bi-info-circle me-1"></i>演示管理员账号：admin / admin123456
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    "use strict";
+
+    const loginForm = document.getElementById("loginForm");
+    const registerForm = document.getElementById("registerForm");
+    const tabs = document.querySelectorAll(".auth-tab");
+    const indicator = document.getElementById("authIndicator");
+    const loginPanel = document.getElementById("loginPanel");
+    const registerPanel = document.getElementById("registerPanel");
+
+    /* -------------------- 选项卡平滑切换 -------------------- */
+    function switchTab(name) {
+        tabs.forEach(t => t.classList.toggle("active", t.dataset.tab === name));
+        indicator.classList.toggle("right", name === "register");
+        loginPanel.classList.toggle("active", name === "login");
+        registerPanel.classList.toggle("active", name === "register");
+    }
+    tabs.forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
+
+    /* -------------------- 密码可见切换 -------------------- */
+    document.querySelectorAll(".pwd-toggle").forEach(btn => {
+        btn.addEventListener("click", () => {
+            const input = document.getElementById(btn.dataset.target);
+            const icon = btn.querySelector("i");
+            const show = input.type === "password";
+            input.type = show ? "text" : "password";
+            icon.className = show ? "bi bi-eye-slash" : "bi bi-eye";
+        });
+    });
+
+    /* -------------------- 表单校验工具 -------------------- */
+    function setError(input, msg) {
+        input.classList.add("is-invalid");
+        const fb = input.parentElement.querySelector(".invalid-feedback");
+        if (fb) fb.textContent = msg;
+    }
+    function clearError(input) {
+        input.classList.remove("is-invalid");
+        const fb = input.parentElement.querySelector(".invalid-feedback");
+        if (fb) fb.textContent = "";
+    }
+    function setLoading(btn, loading, text) {
+        if (loading) {
+            btn.dataset.original = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>' + text;
+        } else {
+            btn.disabled = false;
+            if (btn.dataset.original) btn.innerHTML = btn.dataset.original;
+        }
+    }
+    const isPhone = v => /^1[3-9]\d{9}$/.test(v);
+    const isEmail = v => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+
+    /* -------------------- 登录提交 -------------------- */
+    loginForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const u = document.getElementById("loginUsername");
+        const p = document.getElementById("loginPassword");
+        clearError(u); clearError(p);
+
+        let ok = true;
+        if (!u.value.trim()) { setError(u, "请输入用户名"); ok = false; }
+        if (!p.value) { setError(p, "请输入密码"); ok = false; }
+        if (!ok) return;
+
+        const btn = document.getElementById("loginSubmit");
+        setLoading(btn, true, "登录中...");
+        try {
+            await apiFetch("/api/user/login/", {
+                method: "POST",
+                body: { username: u.value.trim(), password: p.value },
+            });
+            showToast("登录成功，正在跳转...", "success");
+            const next = new URLSearchParams(window.location.search).get("next");
+            setTimeout(() => (window.location.href = next || "/profile/"), 600);
+        } catch (err) {
+            showToast(err.message, "error");
+            setLoading(btn, false);
+        }
+    });
+
+    /* -------------------- 注册提交 -------------------- */
+    registerForm.addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const u = document.getElementById("regUsername");
+        const email = document.getElementById("regEmail");
+        const phone = document.getElementById("regPhone");
+        const pwd = document.getElementById("regPassword");
+        const confirm = document.getElementById("regConfirm");
+        [u, email, phone, pwd, confirm].forEach(clearError);
+
+        let ok = true;
+        if (!u.value.trim()) { setError(u, "请输入用户名"); ok = false; }
+        else if (u.value.trim().length < 3) { setError(u, "用户名至少 3 位"); ok = false; }
+
+        if (!email.value.trim()) { setError(email, "请输入邮箱"); ok = false; }
+        else if (!isEmail(email.value.trim())) { setError(email, "邮箱格式不正确"); ok = false; }
+
+        if (phone.value.trim() && !isPhone(phone.value.trim())) {
+            setError(phone, "手机号格式不正确"); ok = false;
+        }
+
+        if (!pwd.value) { setError(pwd, "请输入密码"); ok = false; }
+        else if (pwd.value.length < 6) { setError(pwd, "密码至少 6 位"); ok = false; }
+
+        if (!confirm.value) { setError(confirm, "请再次输入密码"); ok = false; }
+        else if (confirm.value !== pwd.value) { setError(confirm, "两次输入的密码不一致"); ok = false; }
+
+        if (!ok) return;
+
+        const btn = document.getElementById("registerSubmit");
+        setLoading(btn, true, "注册中...");
+        try {
+            await apiFetch("/api/user/register/", {
+                method: "POST",
+                body: {
+                    username: u.value.trim(),
+                    password: pwd.value,
+                    email: email.value.trim(),
+                    phone: phone.value.trim(),
+                },
+            });
+            showToast("注册成功，请使用新账号登录", "success");
+            const newName = u.value.trim();
+            registerForm.reset();
+            setLoading(btn, false);
+            // 切回登录面板并预填用户名
+            document.getElementById("loginUsername").value = newName;
+            switchTab("login");
+        } catch (err) {
+            showToast(err.message, "error");
+            setLoading(btn, false);
+        }
+    });
+})();
+</script>
+{% endblock %}

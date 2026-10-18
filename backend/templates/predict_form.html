@@ -1,0 +1,422 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}房价预测 · 潍坊市二手房房价预测系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ===== 房价预测页专属样式 ===== */
+    .result-price {
+        font-size: 36px; font-weight: 700; color: var(--primary); line-height: 1.1;
+    }
+    .result-price .unit { font-size: 16px; font-weight: 600; color: var(--text-2); margin-left: 4px; }
+    .result-metric {
+        background: #FAFBFC; border: 1px solid var(--border);
+        border-radius: var(--radius-sm); padding: 12px 14px;
+    }
+    .result-metric .metric-label { font-size: 12px; color: var(--text-3); }
+    .result-metric .metric-value { font-size: 18px; font-weight: 600; color: var(--text-1); margin-top: 2px; }
+
+    .rec-card { padding: 14px 16px; cursor: pointer; }
+    .rec-title { font-size: 14px; font-weight: 600; color: var(--text-1); }
+    .rec-meta { font-size: 12.5px; color: var(--text-3); margin-top: 8px; }
+
+    @media (max-width: 575.98px) {
+        .result-price { font-size: 30px; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- 页面标题 -->
+<div class="d-flex align-items-center gap-2 mb-3">
+    <i class="bi bi-graph-up-arrow fs-4" style="color: var(--primary);"></i>
+    <div>
+        <div class="fs-5 fw-bold">二手房房价预测</div>
+        <div class="text-muted-2" style="font-size: 13px;">输入房源条件，基于 Spark 随机森林模型智能估算房价</div>
+    </div>
+</div>
+
+{% if not request.user.is_authenticated %}
+<!-- 游客提示：预测会写入预测历史，按权限设计需登录后使用 -->
+<div class="app-card mb-3" style="border-color: var(--warning);">
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+        <i class="bi bi-exclamation-triangle-fill" style="color: var(--warning);"></i>
+        <span>房价预测会保存预测历史，需登录后使用。</span>
+        <a href="/login/?next=/predict/" class="btn btn-brand btn-sm ms-auto">
+            <i class="bi bi-box-arrow-in-right me-1"></i>去登录
+        </a>
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-4">
+    <!-- ==================== 左侧：预测表单 ==================== -->
+    <div class="col-lg-5">
+        <div class="app-card">
+            <div class="card-title-line"><i class="bi bi-sliders"></i>房源信息</div>
+            <form id="predictForm" novalidate>
+                <div class="mb-3">
+                    <label class="form-label" for="districtSelect">行政区 <span class="text-danger">*</span></label>
+                    <select class="form-select" id="districtSelect">
+                        <option value="">请选择行政区</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="communityInput">
+                        小区名称
+                        <span class="text-muted-2" style="font-weight:400;font-size:12px;">
+                            （选填，填写后可明显提升精度）
+                        </span>
+                    </label>
+                    <input type="text" class="form-control" id="communityInput"
+                           list="communityOptions" autocomplete="off"
+                           placeholder="输入小区名可自动匹配，例如：金都时代新城">
+                    <datalist id="communityOptions"></datalist>
+                    <div class="form-text text-muted-2" id="communityHint">
+                        不填则按「行政区均价」估算。
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="squareInput">建筑面积（㎡） <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control" id="squareInput"
+                           min="1" step="0.1" placeholder="例如：90">
+                </div>
+
+                <div class="row g-3">
+                    <div class="col-6 mb-3">
+                        <label class="form-label" for="roomNumSelect">室</label>
+                        <select class="form-select" id="roomNumSelect">
+                            <option value="1">1 室</option>
+                            <option value="2" selected>2 室</option>
+                            <option value="3">3 室</option>
+                            <option value="4">4 室</option>
+                            <option value="5">5 室</option>
+                        </select>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <label class="form-label" for="hallNumSelect">厅</label>
+                        <select class="form-select" id="hallNumSelect">
+                            <option value="0">0 厅</option>
+                            <option value="1" selected>1 厅</option>
+                            <option value="2">2 厅</option>
+                            <option value="3">3 厅</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="totalFloorsInput">总楼层 <span class="text-danger">*</span></label>
+                    <input type="number" class="form-control" id="totalFloorsInput"
+                           min="1" step="1" placeholder="例如：18">
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="decorationSelect">装修</label>
+                    <select class="form-select" id="decorationSelect">
+                        <option value="毛坯">毛坯</option>
+                        <option value="简装" selected>简装</option>
+                        <option value="精装">精装</option>
+                        <option value="豪装">豪装</option>
+                    </select>
+                </div>
+
+                <div class="mb-3">
+                    <label class="form-label" for="elevatorSelect">电梯</label>
+                    <select class="form-select" id="elevatorSelect">
+                        <option value="有" selected>有</option>
+                        <option value="无">无</option>
+                    </select>
+                </div>
+
+                <div class="d-flex gap-2 mt-4">
+                    <button type="submit" class="btn btn-gradient flex-grow-1" id="predictBtn">
+                        <i class="bi bi-magic me-1"></i>开始预测
+                    </button>
+                    <button type="button" class="btn btn-outline-soft px-4" id="resetBtn">
+                        <i class="bi bi-arrow-counterclockwise me-1"></i>重置
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- ==================== 右侧：预测结果 ==================== -->
+    <div class="col-lg-7">
+        <div class="app-card h-100">
+            <div class="card-title-line"><i class="bi bi-clipboard-data"></i>预测结果</div>
+
+            <!-- 未预测前的引导空状态 -->
+            <div id="resultEmpty">
+                <div class="empty-state">
+                    <i class="bi bi-house-heart empty-icon"></i>
+                    <div class="empty-text">填写左侧房源信息，点击「开始预测」<br>即可查看房价估算结果与相似房源推荐</div>
+                </div>
+            </div>
+
+            <!-- 预测结果内容 -->
+            <div id="resultContent" style="display: none;">
+                <!-- 预测价格 -->
+                <div class="text-center py-3 px-2 rounded-3"
+                     style="background: linear-gradient(135deg, var(--primary-soft), var(--secondary-soft));">
+                    <div class="text-muted-2" style="font-size: 13px;">预测总价</div>
+                    <div class="result-price my-1">
+                        <span id="predTotal">0</span><span class="unit">万</span>
+                    </div>
+                    <div class="d-inline-flex align-items-center gap-2">
+                        <span class="text-muted-2" style="font-size: 13px;">预测单价</span>
+                        <span class="fw-semibold" id="predUnit">--</span>
+                    </div>
+                    <div class="mt-2" id="engineTagWrap"></div>
+                </div>
+
+                <!-- 相似房源推荐 -->
+                <div class="mt-4">
+                    <div class="card-title-line"><i class="bi bi-houses"></i>同区域相似推荐房源</div>
+                    <div id="recommendList"></div>
+                </div>
+            </div>
+
+            <!-- 请求失败状态 -->
+            <div id="resultError" style="display: none;"></div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    "use strict";
+
+    const form = document.getElementById("predictForm");
+    const predictBtn = document.getElementById("predictBtn");
+    const resetBtn = document.getElementById("resetBtn");
+
+    const emptyEl = document.getElementById("resultEmpty");
+    const contentEl = document.getElementById("resultContent");
+    const errorEl = document.getElementById("resultError");
+    const recommendList = document.getElementById("recommendList");
+
+    /* -------------------- 通用工具 -------------------- */
+    function setLoading(btn, loading, text) {
+        if (loading) {
+            btn.dataset.original = btn.innerHTML;
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>' + text;
+        } else {
+            btn.disabled = false;
+            if (btn.dataset.original) btn.innerHTML = btn.dataset.original;
+        }
+    }
+    function showResult() {
+        emptyEl.style.display = "none";
+        errorEl.style.display = "none";
+        contentEl.style.display = "block";
+        contentEl.classList.remove("fade-up");
+        void contentEl.offsetWidth; // 触发重排，重放淡入动画
+        contentEl.classList.add("fade-up");
+    }
+    function showError(msg) {
+        contentEl.style.display = "none";
+        emptyEl.style.display = "none";
+        errorEl.style.display = "block";
+        errorEl.innerHTML = '<div class="empty-state"><i class="bi bi-exclamation-triangle empty-icon"></i>'
+            + '<div class="empty-text">' + escapeHtml(msg) + '</div></div>';
+    }
+
+    /* -------------------- 动态加载小区候选（自动补全） -------------------- */
+    async function loadCommunities(district) {
+        const listEl = document.getElementById("communityOptions");
+        const hintEl = document.getElementById("communityHint");
+        if (!listEl) return;
+        try {
+            const q = district
+                ? "?district=" + encodeURIComponent(district)
+                : "?limit=600";
+            const data = await apiFetch("/api/house/community_list/" + q);
+            const list = (data && data.list) || [];
+            listEl.innerHTML = list.map(function (c) {
+                return '<option value="' + escapeHtml(c.community) + '">'
+                    + escapeHtml(c.district || "") + " · 挂牌 " + c.house_count + " 套</option>";
+            }).join("");
+            if (hintEl) {
+                hintEl.textContent = "已加载 " + list.length
+                    + " 个小区候选；不填则按「行政区均价」估算。";
+            }
+        } catch (err) {
+            listEl.innerHTML = "";
+            if (hintEl) hintEl.textContent = "小区列表加载失败，可留空（将按区域均价估算）。";
+        }
+    }
+
+    /* -------------------- 动态加载行政区选项 -------------------- */
+    async function loadDistricts() {
+        const sel = document.getElementById("districtSelect");
+        try {
+            const data = await apiFetch("/api/house/map_data/");
+            const list = (data && data.list) || [];
+            list.forEach(item => {
+                if (!item || !item.district) return;
+                const opt = document.createElement("option");
+                opt.value = item.district;
+                opt.textContent = item.district;
+                sel.appendChild(opt);
+            });
+        } catch (e) {
+            showToast("行政区数据加载失败，请稍后重试", "warning");
+        }
+        // 切换行政区后，重新加载该区域的小区候选
+        sel.addEventListener("change", function () {
+            loadCommunities(sel.value);
+        });
+        loadCommunities("");
+    }
+
+    /* -------------------- 渲染相似房源推荐 -------------------- */
+    function renderRecommend(list) {
+        if (!list || !list.length) {
+            renderEmpty(recommendList, "暂无相似推荐房源", "bi-inbox");
+            return;
+        }
+        recommendList.innerHTML = list.map(h => {
+            const title = escapeHtml(h.title || "未知房源");
+            const district = escapeHtml(h.district || "-");
+            const community = escapeHtml(h.community || "未知小区");
+            const size = escapeHtml(h.size || ((h.room_num || 0) + "室" + (h.hall_num || 0) + "厅"));
+            const total = escapeHtml(fmtPrice(h.total_price));
+            const unit = escapeHtml(fmtUnitPrice(h.unit_price));
+
+            // 性价比标签（后端按相对同区域同户型均价的偏离度分档）
+            const v = h.valuation || {};
+            let valTag = "";
+            if (v.level_label) {
+                const pct = v.peer_deviation_pct;
+                const pctText = (pct === null || pct === undefined)
+                    ? "" : (pct > 0 ? "+" : "") + fmtNumber(pct, 1) + "%";
+                valTag = `<span class="status-tag tag-${escapeHtml(v.level_tag || "grey")}" `
+                       + `title="${escapeHtml(v.level_label)}">性价比 ${escapeHtml(pctText)}</span>`;
+            }
+
+            return `
+                <div class="app-card hoverable rec-card mb-2" data-id="${h.id == null ? "" : escapeHtml(String(h.id))}">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div class="rec-title text-truncate">${title}</div>
+                        <span class="status-tag tag-primary flex-shrink-0">${total}</span>
+                    </div>
+                    <div class="rec-meta d-flex flex-wrap gap-3">
+                        <span><i class="bi bi-geo-alt me-1"></i>${district} · ${community}</span>
+                        <span><i class="bi bi-rulers me-1"></i>${escapeHtml(fmtArea(h.square))}</span>
+                        <span><i class="bi bi-house-door me-1"></i>${size}</span>
+                    </div>
+                    <div class="mt-2 d-flex flex-wrap align-items-center gap-2">
+                        <span class="status-tag tag-cyan">${unit}</span>
+                        ${valTag}
+                    </div>
+                </div>`;
+        }).join("");
+    }
+
+    /* -------------------- 渲染预测结果 -------------------- */
+    function renderResult(data) {
+        showResult();
+
+        const total = Number(data.predicted_total_price) || 0;
+        const unit = Number(data.predicted_unit_price) || 0;
+
+        // 总价数字滚动动画
+        const totalEl = document.getElementById("predTotal");
+        countUp(totalEl, total, 1, 900);
+        document.getElementById("predUnit").textContent = fmtUnitPrice(unit);
+
+        // 预测引擎来源 + 小区编码命中情况
+        const engineWrap = document.getElementById("engineTagWrap");
+        if (data.engine === "spark") {
+            let html = '<span class="status-tag tag-success">'
+                + '<i class="bi bi-cpu"></i>Spark 随机森林模型</span>';
+            if (data.community_matched) {
+                html += ' <span class="status-tag tag-cyan" title="已按该小区的历史均价进行校准">'
+                    + '<i class="bi bi-geo-alt"></i>已按小区校准</span>';
+            }
+            engineWrap.innerHTML = html;
+        } else {
+            engineWrap.innerHTML = '<span class="status-tag tag-warning">'
+                + '<i class="bi bi-exclamation-triangle"></i>统计估算（模型未就绪）</span>';
+        }
+
+        renderRecommend(data.recommend_houses || []);
+    }
+
+    /* -------------------- 提交预测 -------------------- */
+    form.addEventListener("submit", async function (e) {
+        e.preventDefault();
+
+        const district = document.getElementById("districtSelect").value;
+        const square = document.getElementById("squareInput").value;
+        const totalFloors = document.getElementById("totalFloorsInput").value;
+        const roomNum = document.getElementById("roomNumSelect").value;
+        const hallNum = document.getElementById("hallNumSelect").value;
+        const decoration = document.getElementById("decorationSelect").value;
+        const elevator = document.getElementById("elevatorSelect").value;
+        const community = document.getElementById("communityInput").value.trim();
+
+        // 前端校验
+        if (!district) { showToast("请选择行政区", "warning"); return; }
+        const squareVal = Number(square);
+        if (!square || isNaN(squareVal) || squareVal <= 0) {
+            showToast("请输入大于 0 的建筑面积", "warning"); return;
+        }
+        const floorsVal = Number(totalFloors);
+        if (!totalFloors || isNaN(floorsVal) || floorsVal <= 0) {
+            showToast("请输入大于 0 的总楼层", "warning"); return;
+        }
+
+        setLoading(predictBtn, true, "预测中...");
+        try {
+            const data = await apiFetch("/api/house/predict/", {
+                method: "POST",
+                body: {
+                    district: district,
+                    square: squareVal,
+                    room_num: Number(roomNum),
+                    hall_num: Number(hallNum),
+                    total_floors: floorsVal,
+                    decoration: decoration,
+                    elevator: elevator,
+                    community: community,
+                },
+            });
+            renderResult(data);
+        } catch (err) {
+            showToast(err.message, "error");
+            showError(err.message);
+        } finally {
+            setLoading(predictBtn, false);
+        }
+    });
+
+    /* -------------------- 重置 -------------------- */
+    resetBtn.addEventListener("click", function () {
+        form.reset();
+        contentEl.style.display = "none";
+        errorEl.style.display = "none";
+        emptyEl.style.display = "block";
+    });
+
+    /* -------------------- 相似推荐卡片跳转详情 -------------------- */
+    // 事件委托：点击整张卡片跳转到房源详情
+    recommendList.addEventListener("click", function (e) {
+        var card = e.target.closest(".rec-card");
+        if (!card) return;
+        var id = card.getAttribute("data-id");
+        if (!id) return;
+        window.location.href = "/house/" + encodeURIComponent(id) + "/";
+    });
+
+    /* -------------------- 初始化 -------------------- */
+    loadDistricts();
+})();
+</script>
+{% endblock %}

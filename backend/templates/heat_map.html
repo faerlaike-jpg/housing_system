@@ -1,0 +1,308 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}二手房热力图 · 潍坊市二手房房价预测系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* 统计小卡片图标底色 */
+    .stat-icon.ic-warning { background: var(--warning-soft);   color: var(--warning); }
+    .stat-icon.ic-danger  { background: var(--danger-soft);    color: var(--danger); }
+    .stat-icon.ic-success { background: var(--success-soft);   color: var(--success); }
+    .stat-icon.ic-primary { background: var(--primary-soft);   color: var(--primary); }
+
+    /* 地图容器：自适应高度，移动端铺满宽度 */
+    .map-canvas {
+        width: 100%;
+        height: calc(100vh - 260px);
+        min-height: 480px;
+    }
+
+    /* 视图切换按钮组 */
+    .view-switch { display: flex; gap: 8px; }
+    .view-switch .btn-soft { background: #F2F3F5; color: var(--text-2); padding: 6px 16px; }
+    .view-switch .btn-soft:hover { background: #E9EBEF; color: var(--text-1); }
+    .view-switch .btn-soft.active {
+        background: var(--primary); color: #fff;
+        box-shadow: 0 6px 14px rgba(22, 93, 255, 0.25);
+    }
+
+    /* 统计小卡片数值字号（区域名较长时略缩） */
+    .mini-stat .stat-value { font-size: 22px; }
+
+    @media (max-width: 991.98px) {
+        .map-canvas { height: 60vh; min-height: 400px; }
+    }
+    @media (max-width: 575.98px) {
+        /* 移动端：地图铺满、统计卡片纵向堆叠 */
+        .map-canvas { height: 56vh; min-height: 360px; }
+        .map-card-head { flex-direction: column; align-items: flex-start !important; gap: 10px; }
+        .view-switch { width: 100%; }
+        .view-switch .btn-soft { flex: 1 1 auto; }
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- ============================ 统计小卡片 ============================ -->
+<div class="row g-3 mb-3">
+    <div class="col-12 col-md-6 col-lg-3">
+        <div class="stat-card mini-stat fade-up">
+            <div class="stat-icon ic-warning"><i class="bi bi-trophy"></i></div>
+            <div>
+                <div class="stat-value" id="statTop">--</div>
+                <div class="stat-label" id="statTopLabel">挂牌量最高区域</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3">
+        <div class="stat-card mini-stat fade-up">
+            <div class="stat-icon ic-danger"><i class="bi bi-arrow-up-circle"></i></div>
+            <div>
+                <div class="stat-value" id="statHigh">--</div>
+                <div class="stat-label" id="statHighLabel">均价最高区域</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3">
+        <div class="stat-card mini-stat fade-up">
+            <div class="stat-icon ic-success"><i class="bi bi-arrow-down-circle"></i></div>
+            <div>
+                <div class="stat-value" id="statLow">--</div>
+                <div class="stat-label" id="statLowLabel">均价最低区域</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-12 col-md-6 col-lg-3">
+        <div class="stat-card mini-stat fade-up">
+            <div class="stat-icon ic-primary"><i class="bi bi-map"></i></div>
+            <div>
+                <div class="stat-value" id="statTotal">--</div>
+                <div class="stat-label" id="statTotalLabel">区域总数</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ============================ 热力地图卡片 ============================ -->
+<div class="app-card fade-up">
+    <div class="d-flex justify-content-between align-items-center card-title-line map-card-head">
+        <span class="d-inline-flex align-items-center gap-2">
+            <i class="bi bi-geo-alt"></i>潍坊市二手房热力分布
+        </span>
+        <!-- 视图切换 -->
+        <div class="view-switch">
+            <button type="button" class="btn btn-soft active" id="btnByPrice">按均价</button>
+            <button type="button" class="btn btn-soft" id="btnByCount">按挂牌量</button>
+        </div>
+    </div>
+    <div class="chart-box map-canvas" id="mapBox"></div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    "use strict";
+
+    var chart = null;              // 地图图表实例
+    var mapData = null;            // 接口返回的原始数据
+    var currentMode = "price";     // price=按均价 | count=按挂牌量
+
+    // 颜色映射
+    var PRICE_COLORS = ["#D6E4FF", "#94BFFF", "#4E86FF", "#165DFF"];
+    var COUNT_COLORS = ["#E6FAF9", "#36CFC9", "#0FA9A3"];
+
+    var $ = function (id) { return document.getElementById(id); };
+
+    // ----------------------------- visualMap 配置 -----------------------------
+    // dimension: 2=平均单价，3=挂牌量
+    function visualMapConfig(mode) {
+        var isCount = mode === "count";
+        var minV, maxV;
+
+        if (isCount) {
+            var counts = (mapData.list || []).map(function (d) { return Number(d.house_count) || 0; });
+            minV = Math.min.apply(null, counts);
+            maxV = Math.max.apply(null, counts);
+        } else {
+            minV = mapData.min_unit_price;
+            maxV = mapData.max_unit_price;
+            if (minV == null || maxV == null) {
+                var prices = (mapData.list || []).map(function (d) { return Number(d.avg_unit_price) || 0; });
+                minV = Math.min.apply(null, prices);
+                maxV = Math.max.apply(null, prices);
+            }
+        }
+
+        return {
+            type: "continuous",
+            dimension: isCount ? 3 : 2,
+            min: minV,
+            max: maxV,
+            calculable: true,
+            orient: "vertical",
+            right: 10,
+            bottom: 20,
+            itemWidth: 12,
+            itemHeight: 110,
+            text: isCount ? ["多", "少"] : ["高", "低"],
+            textStyle: { color: "#86909C", fontSize: 12 },
+            inRange: { color: isCount ? COUNT_COLORS : PRICE_COLORS },
+        };
+    }
+
+    // ----------------------------- 构建散点气泡图配置 -----------------------------
+    // 说明：项目暂无潍坊 GeoJSON，故不使用 echarts map，改用 value 型坐标轴的散点气泡图。
+    function buildMapOption() {
+        var list = mapData.list || [];
+        var lngs = list.map(function (d) { return Number(d.lng); })
+                       .filter(function (v) { return !isNaN(v); });
+        var lats = list.map(function (d) { return Number(d.lat); })
+                       .filter(function (v) { return !isNaN(v); });
+        if (!lngs.length || !lats.length) return null;
+
+        var lngMin = Math.min.apply(null, lngs), lngMax = Math.max.apply(null, lngs);
+        var latMin = Math.min.apply(null, lats), latMax = Math.max.apply(null, lats);
+        var padX = (lngMax - lngMin) * 0.15 || 0.05;
+        var padY = (latMax - latMin) * 0.15 || 0.05;
+
+        var option = baseChartOption();
+        option.grid = { left: 24, right: 24, top: 24, bottom: 24, containLabel: false };
+        option.tooltip = Object.assign({}, option.tooltip, {
+            trigger: "item",
+            formatter: function (p) {
+                var r = (p.data && p.data.raw) || {};
+                return '<div style="font-weight:600;margin-bottom:4px;">'
+                        + escapeHtml(r.district || p.data.name || "") + "</div>"
+                    + "挂牌量：" + fmtNumber(r.house_count) + " 套<br/>"
+                    + "平均单价：" + fmtUnitPrice(r.avg_unit_price) + "<br/>"
+                    + "平均总价：" + fmtPrice(r.avg_total_price);
+            },
+        });
+        // 隐藏坐标轴与网格，仅作为经纬度定位画布
+        option.xAxis = { type: "value", show: false, min: lngMin - padX, max: lngMax + padX };
+        option.yAxis = { type: "value", show: false, min: latMin - padY, max: latMax + padY };
+        option.visualMap = visualMapConfig(currentMode);
+        option.series = [{
+            type: "scatter",
+            data: list.map(function (d) {
+                return {
+                    value: [Number(d.lng), Number(d.lat),
+                            Number(d.avg_unit_price) || 0, Number(d.house_count) || 0],
+                    name: d.district || "--",
+                    raw: d,
+                };
+            }),
+            // 气泡大小按挂牌量映射
+            symbolSize: function (val) {
+                return Math.max(12, Math.min(60, (val[3] || 0) / 8));
+            },
+            itemStyle: { opacity: 0.88, borderColor: "#fff", borderWidth: 1.5 },
+            label: { show: true, position: "top",
+                     formatter: function (p) { return p.data.name; },
+                     color: "#4E5969", fontSize: 12, fontWeight: 600 },
+            // 悬浮高亮：放大 + 加边框
+            emphasis: {
+                scale: 1.4,
+                itemStyle: { borderColor: "#165DFF", borderWidth: 2.5,
+                             shadowBlur: 14, shadowColor: "rgba(22,93,255,0.35)" },
+                label: { color: "#165DFF", fontWeight: "bold" },
+            },
+        }];
+        return option;
+    }
+
+    // ----------------------------- 统计小卡片 -----------------------------
+    function setCard(valueId, value, label) {
+        var v = $(valueId);
+        var l = $(valueId + "Label");
+        if (v) v.textContent = (value === null || value === undefined || value === "") ? "--" : value;
+        if (l && label) l.textContent = label;
+    }
+
+    function renderStats() {
+        var list = mapData.list || [];
+        if (!list.length) {
+            setCard("statTop", "--", "挂牌量最高区域");
+            setCard("statHigh", "--", "均价最高区域");
+            setCard("statLow", "--", "均价最低区域");
+            setCard("statTotal", "--", "区域总数");
+            return;
+        }
+        var byCount = list.slice().sort(function (a, b) {
+            return (Number(b.house_count) || 0) - (Number(a.house_count) || 0);
+        });
+        var byPrice = list.slice().sort(function (a, b) {
+            return (Number(b.avg_unit_price) || 0) - (Number(a.avg_unit_price) || 0);
+        });
+        var top = byCount[0];
+        var high = byPrice[0];
+        var low = byPrice[byPrice.length - 1];
+
+        setCard("statTop", top.district || "--", "挂牌量最高 · " + fmtNumber(top.house_count) + " 套");
+        setCard("statHigh", high.district || "--", "均价最高 · " + fmtUnitPrice(high.avg_unit_price));
+        setCard("statLow", low.district || "--", "均价最低 · " + fmtUnitPrice(low.avg_unit_price));
+        setCard("statTotal", fmtNumber(list.length), "区域总数");
+    }
+
+    // ----------------------------- 主加载流程 -----------------------------
+    async function loadData() {
+        renderChartSkeleton("#mapBox");
+        try {
+            mapData = await apiFetch("/api/house/map_data/");
+        } catch (e) {
+            showToast("地图数据加载失败：" + e.message, "error");
+            var box = $("mapBox");
+            box.innerHTML = "";
+            chart = echarts.init(box);
+            showChartEmpty(chart, "数据加载失败");
+            return;
+        }
+
+        renderStats();
+        var box2 = $("mapBox");
+        box2.innerHTML = "";
+        chart = echarts.init(box2);
+        var option = buildMapOption();
+        if (option) {
+            chart.setOption(option);
+            // 悬停手型光标 + 点击气泡钻取到数据列表
+            chart.getZr().setCursorStyle("pointer");
+            chart.on("click", function (p) {
+                var name = (p && p.data && p.data.name) || (p && p.name);
+                if (!name) return;
+                window.location.href = "/data-list/?district=" + encodeURIComponent(name);
+            });
+        } else {
+            showChartEmpty(chart, "暂无数据");
+        }
+    }
+
+    // ----------------------------- 视图切换（不整页重载） -----------------------------
+    function switchMode(mode) {
+        if (!mapData || mode === currentMode) return;
+        currentMode = mode;
+        $("btnByPrice").classList.toggle("active", mode === "price");
+        $("btnByCount").classList.toggle("active", mode === "count");
+        if (chart && !chart.isDisposed()) {
+            chart.setOption({ visualMap: visualMapConfig(mode) });
+        }
+    }
+
+    // ----------------------------- 事件绑定 -----------------------------
+    $("btnByPrice").addEventListener("click", function () { switchMode("price"); });
+    $("btnByCount").addEventListener("click", function () { switchMode("count"); });
+
+    // 窗口自适应
+    window.addEventListener("resize", debounce(function () {
+        if (chart && !chart.isDisposed()) chart.resize();
+    }, 200));
+
+    // ----------------------------- 初始化 -----------------------------
+    document.addEventListener("DOMContentLoaded", function () {
+        loadData();
+    });
+})();
+</script>
+{% endblock %}

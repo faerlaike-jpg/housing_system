@@ -1,0 +1,349 @@
+{% extends "base.html" %}
+{% load static %}
+
+{% block title %}数据运维面板 · 潍坊市二手房房价预测系统{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* ===== 运维面板专属样式 ===== */
+    .ops-group-row td {
+        background: var(--bg-page) !important;
+        font-weight: 600;
+        font-size: 13px;
+        color: var(--text-2);
+        letter-spacing: .3px;
+    }
+    .kv-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 12px;
+        padding: 9px 0;
+        border-bottom: 1px dashed var(--border);
+        font-size: 14px;
+    }
+    .kv-row:last-child { border-bottom: none; }
+    .kv-row .kv-label { color: var(--text-3); flex-shrink: 0; }
+    .kv-row .kv-value { font-weight: 600; text-align: right; word-break: break-all; }
+    .pipe-step {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 12px 0;
+        border-bottom: 1px dashed var(--border);
+    }
+    .pipe-step:last-child { border-bottom: none; }
+    .pipe-icon {
+        width: 34px; height: 34px; flex-shrink: 0;
+        display: grid; place-items: center; border-radius: var(--radius-sm);
+        background: var(--primary-soft); color: var(--primary); font-size: 16px;
+    }
+    .pipe-script {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+        font-size: 12px; color: var(--text-3);
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- ==================== 加载骨架 ==================== -->
+<div id="opsLoading">
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-lg-3">
+            <div class="app-card"><div class="skeleton skeleton-line" style="width:50%;"></div>
+                <div class="skeleton skeleton-line" style="width:30%; height:22px;"></div></div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="app-card"><div class="skeleton skeleton-line" style="width:50%;"></div>
+                <div class="skeleton skeleton-line" style="width:30%; height:22px;"></div></div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="app-card"><div class="skeleton skeleton-line" style="width:50%;"></div>
+                <div class="skeleton skeleton-line" style="width:30%; height:22px;"></div></div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="app-card"><div class="skeleton skeleton-line" style="width:50%;"></div>
+                <div class="skeleton skeleton-line" style="width:30%; height:22px;"></div></div>
+        </div>
+    </div>
+    <div class="row g-3">
+        <div class="col-12 col-lg-5">
+            <div class="app-card"><div class="skeleton" style="height:300px; border-radius:10px;"></div></div>
+        </div>
+        <div class="col-12 col-lg-7">
+            <div class="app-card"><div class="skeleton" style="height:300px; border-radius:10px;"></div></div>
+        </div>
+    </div>
+</div>
+
+<!-- ==================== 加载失败 ==================== -->
+<div id="opsError" style="display:none;"></div>
+
+<!-- ==================== 面板内容 ==================== -->
+<div id="opsContent" style="display:none;">
+
+    <!-- KPI 看板 -->
+    <div class="row g-3 mb-3">
+        <div class="col-6 col-lg-3">
+            <div class="stat-card fade-up">
+                <div class="stat-icon ic-primary"><i class="bi bi-database"></i></div>
+                <div>
+                    <div class="stat-value"><span id="opsTableCount">0</span><span class="stat-unit">张</span></div>
+                    <div class="stat-label">业务表数量</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card fade-up">
+                <div class="stat-icon ic-cyan"><i class="bi bi-stack"></i></div>
+                <div>
+                    <div class="stat-value"><span id="opsTotalRows">0</span><span class="stat-unit">行</span></div>
+                    <div class="stat-label">数据总行数</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card fade-up">
+                <div class="stat-icon ic-success"><i class="bi bi-graph-up-arrow"></i></div>
+                <div>
+                    <div class="stat-value"><span id="opsR2">0</span></div>
+                    <div class="stat-label">线上模型 R²</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-6 col-lg-3">
+            <div class="stat-card fade-up">
+                <div class="stat-icon ic-warning"><i class="bi bi-diagram-3"></i></div>
+                <div>
+                    <div class="stat-value"><span id="opsFeatureCount">0</span><span class="stat-unit">个</span></div>
+                    <div class="stat-label">入模特征数</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3 mb-3">
+        <!-- 线上模型指标 -->
+        <div class="col-12 col-lg-5">
+            <div class="app-card fade-up h-100">
+                <div class="card-title-line">
+                    <i class="bi bi-cpu"></i>线上模型评估指标
+                    <span class="status-tag tag-primary ms-auto" id="opsModelAlgo">--</span>
+                </div>
+                <div id="opsModelBody"></div>
+            </div>
+        </div>
+
+        <!-- 特征重要性 -->
+        <div class="col-12 col-lg-7">
+            <div class="app-card fade-up h-100">
+                <div class="card-title-line">
+                    <i class="bi bi-sort-down"></i>特征重要性（线上模型）
+                </div>
+                <div class="chart-box" id="opsImportanceChart" style="height:320px;"></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row g-3">
+        <!-- 数据表概览 -->
+        <div class="col-12 col-xl-7">
+            <div class="app-card fade-up">
+                <div class="card-title-line"><i class="bi bi-table"></i>数据表概览</div>
+                <div class="table-responsive">
+                    <table class="table-brand">
+                        <thead>
+                            <tr>
+                                <th>数据表</th>
+                                <th>说明</th>
+                                <th style="text-align:right;">记录数</th>
+                                <th>最近更新</th>
+                            </tr>
+                        </thead>
+                        <tbody id="opsTableTbody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- 大数据链路 -->
+        <div class="col-12 col-xl-5">
+            <div class="app-card fade-up">
+                <div class="card-title-line"><i class="bi bi-diagram-2"></i>大数据链路状态</div>
+                <div id="opsPipeline"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    "use strict";
+
+    var $ = function (id) { return document.getElementById(id); };
+    var impChart = null;
+
+    function showError(msg) {
+        $("opsLoading").style.display = "none";
+        $("opsContent").style.display = "none";
+        var box = $("opsError");
+        box.style.display = "block";
+        renderEmpty(box, msg, "bi-exclamation-triangle");
+    }
+
+    // ----------------------------- KPI -----------------------------
+    function renderSummary(summary, model) {
+        countUp($("opsTableCount"), (summary && summary.table_count) || 0, 0);
+        countUp($("opsTotalRows"), (summary && summary.total_rows) || 0, 0);
+        if (model) {
+            countUp($("opsR2"), model.r2 || 0, 4);
+            countUp($("opsFeatureCount"), model.feature_count || 0, 0);
+        } else {
+            $("opsR2").textContent = "--";
+            $("opsFeatureCount").textContent = "--";
+        }
+    }
+
+    // ----------------------------- 模型指标卡 -----------------------------
+    function kv(label, value) {
+        return '<div class="kv-row"><span class="kv-label">' + label + "</span>"
+            + '<span class="kv-value">' + value + "</span></div>";
+    }
+
+    function renderModel(model) {
+        var body = $("opsModelBody");
+        if (!model) {
+            $("opsModelAlgo").textContent = "未写入";
+            renderEmpty(body, "尚未写入模型指标，请运行 train_upgraded_model.py 训练后重试",
+                "bi-cpu");
+            return;
+        }
+        $("opsModelAlgo").textContent = model.algorithm || "RandomForest";
+        body.innerHTML =
+            kv("RMSE（均方根误差）", fmtNumber(model.rmse, 2) + " 万元")
+            + kv("MAE（平均绝对误差）", fmtNumber(model.mae, 2) + " 万元")
+            + kv("R²（决定系数）", fmtNumber(model.r2, 4))
+            + kv("MAPE（平均绝对百分比误差）", fmtNumber(model.mape, 2) + " %")
+            + kv("树数量 / 最大深度",
+                fmtNumber(model.num_trees, 0) + " 棵 / " + fmtNumber(model.max_depth, 0) + " 层")
+            + kv("训练集 / 测试集样本",
+                fmtNumber(model.train_rows, 0) + " / " + fmtNumber(model.test_rows, 0) + " 条")
+            + kv("训练时间", escapeHtml(model.trained_at || "--"));
+    }
+
+    // ----------------------------- 特征重要性图 -----------------------------
+    function renderImportance(list) {
+        var box = $("opsImportanceChart");
+        if (impChart) { impChart.dispose(); impChart = null; }
+        if (!list || !list.length) {
+            impChart = echarts.init(box);
+            showChartEmpty(impChart, "暂无特征重要性数据");
+            return;
+        }
+        impChart = echarts.init(box);
+        // 横向条形图需要从下往上递增，故反转顺序
+        var items = list.slice().reverse();
+        impChart.setOption(baseChartOption({
+            tooltip: {
+                trigger: "axis",
+                axisPointer: { type: "shadow" },
+                valueFormatter: function (v) { return (v * 100).toFixed(2) + " %"; },
+            },
+            grid: { left: 8, right: 56, top: 16, bottom: 8, containLabel: true },
+            xAxis: {
+                type: "value",
+                axisLabel: { formatter: function (v) { return (v * 100).toFixed(0) + "%"; } },
+            },
+            yAxis: {
+                type: "category",
+                data: items.map(function (d) { return d.label || d.feature; }),
+                axisLabel: { color: "#4E5969", fontSize: 12 },
+            },
+            series: [{
+                type: "bar",
+                data: items.map(function (d) { return d.importance; }),
+                barWidth: "52%",
+                itemStyle: { borderRadius: [0, 6, 6, 0] },
+                label: {
+                    show: true, position: "right",
+                    formatter: function (p) { return (p.value * 100).toFixed(2) + "%"; },
+                    color: "#86909C", fontSize: 12,
+                },
+            }],
+        }), true);
+    }
+
+    // ----------------------------- 数据表概览 -----------------------------
+    function renderTables(tables) {
+        var tbody = $("opsTableTbody");
+        var lastGroup = null;
+        var html = "";
+        tables.forEach(function (t) {
+            if (t.group !== lastGroup) {
+                lastGroup = t.group;
+                html += '<tr class="ops-group-row"><td colspan="4">' + escapeHtml(t.group) + "</td></tr>";
+            }
+            html += "<tr>"
+                + '<td><span class="status-tag tag-grey">' + escapeHtml(t.name) + "</span></td>"
+                + "<td>" + escapeHtml(t.label) + "</td>"
+                + '<td style="text-align:right;" class="fw-semibold">'
+                + fmtNumber(t.rows, 0) + "</td>"
+                + '<td class="text-muted-2" style="font-size:13px;">'
+                + escapeHtml(t.updated_at || "--") + "</td>"
+                + "</tr>";
+        });
+        tbody.innerHTML = html || '<tr><td colspan="4"></td></tr>';
+    }
+
+    // ----------------------------- 链路状态 -----------------------------
+    function renderPipeline(steps) {
+        var box = $("opsPipeline");
+        if (!steps || !steps.length) {
+            renderEmpty(box, "暂无链路信息");
+            return;
+        }
+        var html = "";
+        steps.forEach(function (s) {
+            var tag = s.ready
+                ? '<span class="status-tag tag-success">就绪</span>'
+                : '<span class="status-tag tag-warning">待运行</span>';
+            html += '<div class="pipe-step">'
+                + '<div class="pipe-icon"><i class="bi bi-gear"></i></div>'
+                + '<div class="flex-grow-1" style="min-width:0;">'
+                + '<div class="fw-semibold">' + escapeHtml(s.name) + "</div>"
+                + '<div class="pipe-script">' + escapeHtml(s.script) + " → "
+                + escapeHtml(s.output) + "</div>"
+                + "</div>" + tag + "</div>";
+        });
+        box.innerHTML = html;
+    }
+
+    // ----------------------------- 载入数据 -----------------------------
+    async function loadOps() {
+        try {
+            var data = await apiFetch("/api/analysis/ops_status/");
+            $("opsLoading").style.display = "none";
+            $("opsError").style.display = "none";
+            $("opsContent").style.display = "block";
+            $("opsContent").classList.add("fade-up");
+
+            renderSummary(data.summary, data.model);
+            renderModel(data.model);
+            renderImportance(data.importance);
+            renderTables(data.tables || []);
+            renderPipeline(data.pipeline || []);
+        } catch (e) {
+            showError(e.message || "运维数据加载失败");
+        }
+    }
+
+    window.addEventListener("resize", function () {
+        if (impChart) impChart.resize();
+    });
+
+    loadOps();
+})();
+</script>
+{% endblock %}
